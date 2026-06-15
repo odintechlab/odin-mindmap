@@ -10,13 +10,25 @@ export async function fetchWorkspaces(): Promise<NodeRecord[]> {
   return data.nodes;
 }
 
-export async function fetchChildren(nodeId: string): Promise<NodeRecord[]> {
+export async function fetchChildren(
+  nodeId: string,
+  opts?: { workspaceId?: string },
+): Promise<NodeRecord[]> {
   const { type, clickupId } = parseNodeId(nodeId);
 
   let url: string;
   switch (type) {
     case "workspace":
       url = `/api/clickup/workspaces/${clickupId}/spaces`;
+      break;
+    case "people":
+      url = `/api/clickup/workspaces/${clickupId}/members`;
+      break;
+    case "member":
+      if (!opts?.workspaceId) {
+        throw new Error("workspaceId required for member tasks");
+      }
+      url = `/api/clickup/workspaces/${opts.workspaceId}/members/${clickupId}/tasks`;
       break;
     case "space":
       url = `/api/clickup/spaces/${clickupId}/children`;

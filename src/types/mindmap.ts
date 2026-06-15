@@ -5,7 +5,9 @@ export type NodeType =
   | "list"
   | "task"
   | "subtask"
-  | "loadmore";
+  | "loadmore"
+  | "people"
+  | "member";
 
 export interface MindMapAssignee {
   username: string;
@@ -37,6 +39,8 @@ export interface MindMapNodeData {
   remainingCount?: number;
   /** Render in compact mode (dense lists) */
   compact?: boolean;
+  /** Workspace id — for member nodes fetching assignee tasks */
+  workspaceId?: string;
   [key: string]: unknown;
 }
 

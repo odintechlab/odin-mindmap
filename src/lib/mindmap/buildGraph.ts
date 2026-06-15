@@ -17,16 +17,16 @@ function getDirectChildren(
   return children.sort((a, b) => a.data.label.localeCompare(b.data.label));
 }
 
-function paginateListTasks(
-  listId: string,
+function paginateTaskChildren(
+  parentId: string,
   cache: Map<string, NodeRecord>,
   taskVisibleLimits: Map<string, number>,
 ): { visible: NodeRecord[]; loadMore: NodeRecord | null; useCompact: boolean } {
-  const allTasks = getDirectChildren(listId, cache).filter(
+  const allTasks = getDirectChildren(parentId, cache).filter(
     (r) => r.data.type === "task",
   );
 
-  const limit = taskVisibleLimits.get(listId) ?? TASK_PAGE_SIZE;
+  const limit = taskVisibleLimits.get(parentId) ?? TASK_PAGE_SIZE;
   const visible = allTasks.slice(0, limit);
   const remaining = allTasks.length - visible.length;
   const useCompact = visible.length >= 8;
@@ -34,13 +34,13 @@ function paginateListTasks(
   let loadMore: NodeRecord | null = null;
   if (remaining > 0) {
     loadMore = {
-      id: makeLoadMoreId(listId),
+      id: makeLoadMoreId(parentId),
       data: {
         type: "loadmore",
-        clickupId: listId,
-        parentId: listId,
+        clickupId: parentId,
+        parentId,
         label: `Show ${remaining} more task${remaining === 1 ? "" : "s"}`,
-        listParentId: listId,
+        listParentId: parentId,
         remainingCount: remaining,
         hasChildren: false,
         childrenLoaded: true,
@@ -64,11 +64,16 @@ export function buildVisibleGraph(
   const compactTaskIds = new Set<string>();
   const loadMoreNodes: NodeRecord[] = [];
 
-  // Determine pagination visibility for expanded lists
+  // Determine pagination for expanded lists and members
   for (const [id, record] of cache) {
-    if (record.data.type !== "list" || !expandedIds.has(id)) continue;
+    if (
+      (record.data.type !== "list" && record.data.type !== "member") ||
+      !expandedIds.has(id)
+    ) {
+      continue;
+    }
 
-    const { visible, loadMore, useCompact } = paginateListTasks(
+    const { visible, loadMore, useCompact } = paginateTaskChildren(
       id,
       cache,
       taskVisibleLimits,
@@ -107,8 +112,8 @@ export function buildVisibleGraph(
 
     const record = cache.get(id);
 
-    if (record?.data.type === "list") {
-      const { visible, loadMore } = paginateListTasks(id, cache, taskVisibleLimits);
+    if (record?.data.type === "list" || record?.data.type === "member") {
+      const { visible, loadMore } = paginateTaskChildren(id, cache, taskVisibleLimits);
 
       for (const task of visible) {
         visibleIds.add(task.id);

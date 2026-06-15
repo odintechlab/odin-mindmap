@@ -17,24 +17,47 @@ function formatDueDate(ms: string | null | undefined): string | null {
   }).format(date);
 }
 
+function ChevronIcon({ expanded }: { expanded?: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="currentColor"
+      className="transition-transform duration-200"
+      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+    >
+      <path d="M3 1.5L7.5 5L3 8.5" />
+    </svg>
+  );
+}
+
 function MindMapNodeComponent({ data }: NodeProps) {
   const node = data as MindMapNodeData;
   const isTask = node.type === "task" || node.type === "subtask";
+  const isMember = node.type === "member";
   const isLoadMore = node.type === "loadmore";
   const accent = isLoadMore ? "#6366f1" : (TYPE_COLORS[node.type] ?? "#6366f1");
   const due = formatDueDate(node.dueDate);
   const width = node.compact ? "w-[200px]" : "w-[220px]";
 
+  const handleClass = "!w-1.5 !h-1.5 !border-0 !bg-[var(--muted)] !opacity-0";
+
   if (isLoadMore) {
     return (
       <>
-        <Handle type="target" position={Position.Left} className="!bg-zinc-400 !w-2 !h-2 !border-0" />
+        <Handle type="target" position={Position.Left} className={handleClass} />
         <button
           type="button"
           data-load-more
-          className={`${width} rounded-xl border border-dashed border-indigo-400 bg-indigo-50 px-3 py-2.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 dark:border-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400 dark:hover:bg-indigo-950`}
+          className={`${width} group rounded-xl border border-dashed border-indigo-400/60 bg-indigo-50/80 px-3 py-2.5 text-sm font-semibold text-indigo-600 backdrop-blur-sm transition-all duration-200 hover:border-indigo-400 hover:bg-indigo-100/80 hover:shadow-md dark:border-indigo-500/40 dark:bg-indigo-950/30 dark:text-indigo-300 dark:hover:border-indigo-400/60 dark:hover:bg-indigo-950/50`}
         >
-          {node.label}
+          <span className="flex items-center justify-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="opacity-60 group-hover:opacity-100 transition-opacity">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+            {node.label}
+          </span>
         </button>
         <Handle type="source" position={Position.Right} className="!bg-transparent !w-0 !h-0 !border-0" />
       </>
@@ -43,52 +66,65 @@ function MindMapNodeComponent({ data }: NodeProps) {
 
   return (
     <>
-      <Handle type="target" position={Position.Left} className="!bg-zinc-400 !w-2 !h-2 !border-0" />
+      <Handle type="target" position={Position.Left} className={handleClass} />
       <div
         className={`
-          ${width} rounded-xl border bg-[var(--panel)] shadow-sm transition-all duration-200
-          ${node.isSelected ? "ring-2 ring-indigo-500 shadow-md" : ""}
-          ${node.isOnPath && !node.isSelected ? "border-indigo-300 dark:border-indigo-700" : "border-[var(--border)]"}
+          ${width} group/node rounded-xl border bg-[var(--panel-solid)] shadow-surface
+          backdrop-blur-sm transition-all duration-200
+          hover:shadow-surface-lg hover:-translate-y-px
+          ${node.isSelected ? "ring-2 ring-[var(--accent)]/50 shadow-surface-lg" : ""}
+          ${node.isOnPath && !node.isSelected ? "border-[var(--accent)]/30" : "border-[var(--border)]"}
         `}
-        style={{ borderLeftWidth: 3, borderLeftColor: accent }}
+        style={{
+          borderLeftWidth: 3,
+          borderLeftColor: accent,
+          ...(node.isSelected ? { boxShadow: `var(--surface-shadow-lg), 0 0 20px var(--accent-glow)` } : {}),
+        }}
       >
         <div className={node.compact ? "px-2.5 py-2" : "px-3 py-2.5"}>
           <div className="flex items-start gap-2">
             {node.hasChildren && (
               <button
                 type="button"
-                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-indigo-50 hover:text-indigo-500 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-400"
                 data-expand-toggle
               >
                 {node.isLoading ? (
-                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-indigo-500" />
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-200 border-t-[var(--accent)]" />
                 ) : (
-                  <span
-                    className="text-[10px] transition-transform duration-150"
-                    style={{ transform: node.isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
-                  >
-                    ▶
-                  </span>
+                  <ChevronIcon expanded={node.isExpanded} />
                 )}
               </button>
             )}
             <div className="min-w-0 flex-1">
-              <p className={`truncate font-medium leading-tight text-zinc-900 dark:text-zinc-100 ${node.compact ? "text-xs" : "text-sm"}`}>
+              <p className={`truncate font-semibold leading-tight text-zinc-900 dark:text-zinc-50 ${node.compact ? "text-xs" : "text-sm"}`}>
                 {node.label}
               </p>
               {!node.compact && (
-                <p className="mt-0.5 text-[10px] uppercase tracking-wider text-zinc-400">
-                  {node.type}
-                  {node.childCount != null && !node.childrenLoaded
-                    ? ` · ${node.childCount}`
-                    : ""}
-                </p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span
+                    className="inline-flex rounded px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white"
+                    style={{ backgroundColor: accent }}
+                  >
+                    {node.type}
+                  </span>
+                  {node.childCount != null && !node.childrenLoaded && (
+                    <span className="text-[10px] font-medium text-[var(--muted)]">
+                      {node.childCount} items
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             {!node.compact && node.assignees && node.assignees.length > 0 && (
-              <div className="flex -space-x-1.5 shrink-0">
-                {node.assignees.slice(0, 2).map((a) => (
-                  <Avatar key={a.username} name={a.username} src={a.profilePicture} size={20} />
+              <div className={`flex shrink-0 ${isMember ? "" : "-space-x-1.5"}`}>
+                {node.assignees.slice(0, isMember ? 1 : 2).map((a) => (
+                  <Avatar
+                    key={a.username}
+                    name={a.username}
+                    src={a.profilePicture}
+                    size={isMember ? 28 : 20}
+                  />
                 ))}
               </div>
             )}
@@ -101,13 +137,13 @@ function MindMapNodeComponent({ data }: NodeProps) {
               )}
               {node.priority && (
                 <span
-                  className="h-2 w-2 rounded-full"
+                  className="h-2 w-2 rounded-full ring-1 ring-black/10"
                   style={{ backgroundColor: node.priority.color }}
                   title={node.priority.label}
                 />
               )}
               {due && (
-                <span className="text-[10px] text-zinc-400">{due}</span>
+                <span className="text-[10px] font-medium text-[var(--muted)]">{due}</span>
               )}
             </div>
           )}
@@ -115,7 +151,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
           {isTask && node.compact && node.status && (
             <div className="mt-1">
               <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
+                className="inline-block h-1.5 w-1.5 rounded-full ring-1 ring-black/10"
                 style={{ backgroundColor: node.status.color }}
                 title={node.status.name}
               />
@@ -123,7 +159,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
           )}
         </div>
       </div>
-      <Handle type="source" position={Position.Right} className="!bg-zinc-400 !w-2 !h-2 !border-0" />
+      <Handle type="source" position={Position.Right} className={handleClass} />
     </>
   );
 }

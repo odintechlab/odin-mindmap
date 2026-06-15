@@ -12,6 +12,7 @@ export interface ClickUpTeam {
   name: string;
   color?: string;
   avatar?: string | null;
+  members?: ClickUpMember[];
 }
 
 export interface ClickUpSpace {
@@ -94,6 +95,22 @@ export interface ClickUpListResponse {
   id: string;
   name: string;
   statuses?: ClickUpStatus[];
+}
+
+export interface ClickUpMemberUser {
+  id: number;
+  username: string;
+  email?: string;
+  color?: string;
+  profilePicture?: string | null;
+}
+
+export interface ClickUpMember {
+  user: ClickUpMemberUser;
+}
+
+export interface ClickUpMembersResponse {
+  members: ClickUpMember[];
 }
 
 export interface TaskUpdatePayload {

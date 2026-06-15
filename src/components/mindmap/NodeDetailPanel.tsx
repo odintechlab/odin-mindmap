@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -23,6 +23,14 @@ function formatDate(ms: string | null | undefined): string {
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
   }).format(date);
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] mb-1.5">
+      {children}
+    </p>
+  );
 }
 
 export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProps) {
@@ -92,41 +100,39 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
   const statusOptions = data.statuses ?? (data.status ? [data.status] : []);
 
   return (
-    <aside className="flex w-full flex-col border-[var(--border)] bg-[var(--panel)] md:w-80 md:border-l">
-      <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Details</h2>
+    <aside className="glass-strong flex w-full flex-col border-[var(--border)] md:w-80 md:border-l shadow-surface-lg">
+      <div className="h-0.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500" />
+
+      <div className="flex items-center justify-between px-5 py-4">
+        <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Details</h2>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition-colors hover:bg-black/5 hover:text-zinc-700 dark:hover:bg-white/8 dark:hover:text-zinc-200"
           aria-label="Close panel"
         >
-          ✕
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M3 3l8 8M11 3l-8 8" />
+          </svg>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="custom-scrollbar flex-1 overflow-y-auto px-5 pb-5 space-y-5">
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">
-            Type
-          </p>
-          <p className="text-sm capitalize text-zinc-700 dark:text-zinc-300">{data.type}</p>
+          <FieldLabel>Type</FieldLabel>
+          <p className="text-sm font-medium capitalize text-zinc-700 dark:text-zinc-300">{data.type}</p>
         </div>
 
         {editable ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1 block">
-                Name
-              </label>
+              <FieldLabel>Name</FieldLabel>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </div>
 
             {statusOptions.length > 0 && (
               <div>
-                <label className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1 block">
-                  Status
-                </label>
+                <FieldLabel>Status</FieldLabel>
                 <Select value={status} onChange={(e) => setStatus(e.target.value)}>
                   {statusOptions.map((s) => (
                     <option key={s.name} value={s.name}>
@@ -138,9 +144,7 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
             )}
 
             <div>
-              <label className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1 block">
-                Priority
-              </label>
+              <FieldLabel>Priority</FieldLabel>
               <Select value={priority} onChange={(e) => setPriority(e.target.value)}>
                 <option value="">None</option>
                 {PRIORITY_OPTIONS.map((p) => (
@@ -161,28 +165,22 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
           </div>
         ) : (
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">
-              Name
-            </p>
-            <p className="text-sm text-zinc-900 dark:text-zinc-100">{data.label}</p>
+            <FieldLabel>Name</FieldLabel>
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{data.label}</p>
           </div>
         )}
 
-        {data.status && (
+        {data.status && !editable && (
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">
-              Status
-            </p>
+            <FieldLabel>Status</FieldLabel>
             <Badge label={data.status.name} color={data.status.color} />
           </div>
         )}
 
         {data.dueDate && (
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-1">
-              Due date
-            </p>
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            <FieldLabel>Due date</FieldLabel>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               {formatDate(data.dueDate)}
             </p>
           </div>
@@ -190,14 +188,12 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
 
         {data.assignees && data.assignees.length > 0 && (
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400 mb-2">
-              Assignees
-            </p>
-            <div className="space-y-2">
+            <FieldLabel>Assignees</FieldLabel>
+            <div className="space-y-2.5">
               {data.assignees.map((a) => (
-                <div key={a.username} className="flex items-center gap-2">
+                <div key={a.username} className="flex items-center gap-2.5">
                   <Avatar name={a.username} src={a.profilePicture} size={28} />
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">{a.username}</span>
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{a.username}</span>
                 </div>
               ))}
             </div>
@@ -209,9 +205,12 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
             href={data.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border-strong)] px-3 py-2 text-sm font-medium text-[var(--accent)] transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
           >
-            Open in ClickUp ↗
+            Open in ClickUp
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 10L10 2M10 2H5M10 2v5" />
+            </svg>
           </a>
         )}
       </div>

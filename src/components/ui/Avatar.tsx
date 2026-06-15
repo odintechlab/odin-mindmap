@@ -12,6 +12,8 @@ export function Avatar({ name, src, size = 24 }: AvatarProps) {
     .slice(0, 2)
     .toUpperCase();
 
+  const ringClass = "ring-2 ring-[var(--panel-solid)]";
+
   if (src) {
     return (
       <img
@@ -19,15 +21,15 @@ export function Avatar({ name, src, size = 24 }: AvatarProps) {
         alt={name}
         width={size}
         height={size}
-        className="rounded-full ring-2 ring-white dark:ring-zinc-900"
+        className={`rounded-full ${ringClass} object-cover`}
       />
     );
   }
 
   return (
     <span
-      className="inline-flex items-center justify-center rounded-full bg-indigo-500 text-white font-medium ring-2 ring-white dark:ring-zinc-900"
-      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      className={`inline-flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white font-semibold ${ringClass}`}
+      style={{ width: size, height: size, fontSize: size * 0.36 }}
     >
       {initials}
     </span>

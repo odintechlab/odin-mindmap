@@ -24,6 +24,25 @@ export async function getTasksInList(listId: string): Promise<ClickUpTask[]> {
   return tasks;
 }
 
+export async function getTasksForAssignee(
+  teamId: string,
+  userId: string,
+): Promise<ClickUpTask[]> {
+  const tasks: ClickUpTask[] = [];
+  let page = 0;
+
+  while (true) {
+    const data = await clickup<ClickUpTasksResponse>(
+      `/team/${teamId}/task?${TASK_QUERY}&assignees[]=${userId}&page=${page}`,
+    );
+    tasks.push(...data.tasks);
+    if (data.last_page) break;
+    page++;
+  }
+
+  return tasks;
+}
+
 export async function updateTask(taskId: string, payload: TaskUpdatePayload) {
   return clickup<ClickUpTask>(`/task/${taskId}`, {
     method: "PUT",

@@ -184,25 +184,36 @@ function MindMapCanvasInner() {
     setLoadingIds((prev) => cloneSet(prev).add(nodeId));
 
     try {
-      const children = await fetchChildren(nodeId);
+      const record = cacheRef.current.get(nodeId);
+      const workspaceId = record?.data.workspaceId as string | undefined;
+      const children = await fetchChildren(
+        nodeId,
+        type === "member" ? { workspaceId } : undefined,
+      );
 
       setCache((prev) => {
         const next = new Map(prev);
         const parent = next.get(nodeId);
         if (parent) {
+          const taskCount = children.filter((c) => c.data.type === "task").length;
           next.set(nodeId, {
             ...parent,
-            data: { ...parent.data, childrenLoaded: true },
+            data: {
+              ...parent.data,
+              childrenLoaded: true,
+              childCount: type === "member" ? taskCount : parent.data.childCount,
+            },
           });
         }
         for (const child of children) {
-          next.set(child.id, child);
+          if (!next.has(child.id)) {
+            next.set(child.id, child);
+          }
         }
         return next;
       });
 
-      // Reset pagination when freshly loading a list
-      if (type === "list") {
+      if (type === "list" || type === "member") {
         setTaskVisibleLimits((prev) => {
           const next = new Map(prev);
           next.set(nodeId, TASK_PAGE_SIZE);
@@ -330,12 +341,12 @@ function MindMapCanvasInner() {
       />
 
       {error && (
-        <div className="flex items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-          <span>{error}</span>
+        <div className="flex items-center justify-between gap-4 border-b border-red-200/60 bg-red-50/80 px-5 py-2.5 text-sm text-red-700 backdrop-blur-sm dark:border-red-900/40 dark:bg-red-950/50 dark:text-red-300">
+          <span className="font-medium">{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="shrink-0 text-red-500 hover:text-red-700"
+            className="shrink-0 rounded-lg px-2 py-1 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
           >
             Dismiss
           </button>
@@ -345,8 +356,9 @@ function MindMapCanvasInner() {
       <div className="flex flex-1 min-h-0 flex-col md:flex-row">
         <div className="relative flex-1 min-h-0">
           {initialLoading ? (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-400">
-              Loading workspaces…
+            <div className="canvas-bg flex h-full flex-col items-center justify-center gap-4">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
+              <p className="text-sm font-medium text-[var(--muted)]">Loading workspaces…</p>
             </div>
           ) : (
             <ReactFlow
@@ -363,9 +375,17 @@ function MindMapCanvasInner() {
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable
-              className="bg-[var(--background)]"
+              className="canvas-bg"
             >
-              <Background gap={20} size={1} color="var(--border)" />
+              <svg style={{ position: "absolute", width: 0, height: 0 }}>
+                <defs>
+                  <linearGradient id="edge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#a855f7" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <Background gap={24} size={1.5} color="var(--dot-color)" />
               <Controls showInteractive={false} />
             </ReactFlow>
           )}

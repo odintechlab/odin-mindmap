@@ -3,21 +3,35 @@
 @tailwind utilities;
 
 :root {
-  --background: #fafafa;
+  --background: #f4f4f8;
   --foreground: #18181b;
-  --panel: #ffffff;
-  --border: #e4e4e7;
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-solid: #ffffff;
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.1);
   --muted: #71717a;
   --accent: #6366f1;
+  --accent-end: #a855f7;
+  --accent-glow: rgba(99, 102, 241, 0.35);
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+  --surface-shadow-lg: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --dot-color: rgba(99, 102, 241, 0.12);
 }
 
 .dark {
-  --background: #09090b;
+  --background: #09090f;
   --foreground: #fafafa;
-  --panel: #18181b;
-  --border: #27272a;
+  --panel: rgba(24, 24, 32, 0.75);
+  --panel-solid: #18181f;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
   --muted: #a1a1aa;
   --accent: #818cf8;
+  --accent-end: #c084fc;
+  --accent-glow: rgba(129, 140, 248, 0.25);
+  --surface-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --surface-shadow-lg: 0 4px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --dot-color: rgba(129, 140, 248, 0.08);
 }
 
 body {
@@ -25,23 +39,121 @@ body {
   color: var(--foreground);
 }
 
+/* Ambient canvas glow */
+.canvas-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99, 102, 241, 0.07), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 90%, rgba(168, 85, 247, 0.06), transparent),
+    var(--background);
+}
+
+.dark .canvas-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(99, 102, 241, 0.12), transparent),
+    radial-gradient(ellipse 60% 50% at 80% 90%, rgba(168, 85, 247, 0.08), transparent),
+    var(--background);
+}
+
+/* Brand gradient text */
+.text-gradient {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-end) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass surfaces */
+.glass {
+  background: var(--panel);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+
+.glass-strong {
+  background: var(--panel);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+}
+
+/* Accent gradient button */
+.btn-gradient {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-end) 100%);
+  box-shadow: 0 2px 8px var(--accent-glow);
+  transition: box-shadow 0.2s, transform 0.15s, filter 0.15s;
+}
+
+.btn-gradient:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 16px var(--accent-glow);
+}
+
+.btn-gradient:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
 /* React Flow overrides */
 .react-flow__edge-path {
-  stroke: var(--border);
+  stroke: var(--border-strong);
   stroke-width: 1.5;
+  transition: stroke 0.3s, stroke-width 0.3s;
 }
 
 .react-flow__edge-path.path-highlight {
-  stroke: var(--accent);
+  stroke: url(#edge-gradient);
   stroke-width: 2;
+  filter: drop-shadow(0 0 3px var(--accent-glow));
+}
+
+.react-flow__controls {
+  box-shadow: var(--surface-shadow) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
 }
 
 .react-flow__controls-button {
-  background: var(--panel) !important;
+  background: var(--panel-solid) !important;
   border-color: var(--border) !important;
   color: var(--foreground) !important;
+  width: 28px !important;
+  height: 28px !important;
 }
 
 .react-flow__controls-button:hover {
   background: var(--border) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: var(--muted) !important;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+}
+
+/* Loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--border) 25%,
+    var(--border-strong) 50%,
+    var(--border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }

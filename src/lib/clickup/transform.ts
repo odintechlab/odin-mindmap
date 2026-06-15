@@ -1,4 +1,4 @@
-import type { ClickUpTask, ClickUpList, ClickUpFolder, ClickUpSpace, ClickUpTeam } from "@/types/clickup";
+import type { ClickUpTask, ClickUpList, ClickUpFolder, ClickUpSpace, ClickUpTeam, ClickUpMember } from "@/types/clickup";
 import {
   makeNodeId,
   type MindMapNodeData,
@@ -72,6 +72,45 @@ export function listToNode(list: ClickUpList, parentId: string): NodeRecord {
       childrenLoaded: false,
       childCount,
       listId: list.id,
+    },
+  };
+}
+
+export function peopleToNode(workspaceId: string, parentId: string): NodeRecord {
+  const id = makeNodeId("people", workspaceId);
+  return {
+    id,
+    data: {
+      type: "people",
+      clickupId: workspaceId,
+      parentId,
+      label: "People",
+      hasChildren: true,
+      childrenLoaded: false,
+    },
+  };
+}
+
+export function memberToNode(
+  member: ClickUpMember,
+  parentId: string,
+  workspaceId: string,
+): NodeRecord {
+  const user = member.user;
+  const id = makeNodeId("member", String(user.id));
+  return {
+    id,
+    data: {
+      type: "member",
+      clickupId: String(user.id),
+      parentId,
+      label: user.username || user.email || `User ${user.id}`,
+      assignees: [
+        { username: user.username, profilePicture: user.profilePicture },
+      ],
+      workspaceId,
+      hasChildren: true,
+      childrenLoaded: false,
     },
   };
 }

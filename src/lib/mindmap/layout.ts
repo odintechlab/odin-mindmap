@@ -44,7 +44,7 @@ function applyTaskGridLayout(
 
   for (const [parentId, childIds] of childrenByParent) {
     const parent = byId.get(parentId);
-    if (!parent || parent.data.type !== "list") continue;
+    if (!parent || (parent.data.type !== "list" && parent.data.type !== "member")) continue;
 
     const taskChildren = childIds.filter((id) => {
       const n = byId.get(id);

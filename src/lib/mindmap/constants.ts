@@ -27,4 +27,6 @@ export const TYPE_COLORS: Record<string, string> = {
   task: "#3b82f6",
   subtask: "#60a5fa",
   loadmore: "#6366f1",
+  people: "#0d9488",
+  member: "#14b8a6",
 };
