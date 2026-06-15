@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #fafafa;
+  --foreground: #18181b;
+  --panel: #ffffff;
+  --border: #e4e4e7;
+  --muted: #71717a;
+  --accent: #6366f1;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --panel: #18181b;
+  --border: #27272a;
+  --muted: #a1a1aa;
+  --accent: #818cf8;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* React Flow overrides */
+.react-flow__edge-path {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.react-flow__edge-path.path-highlight {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.react-flow__controls-button {
+  background: var(--panel) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--border) !important;
+}
