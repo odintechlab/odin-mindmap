@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Avatar } from "@/components/ui/Avatar";
+import { AppNav } from "@/components/AppNav";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import type { TaskStatusFilter } from "@/lib/mindmap/constants";
@@ -301,6 +302,9 @@ export function MindMapToolbar({
             Odin Mindmap
           </h1>
         </div>
+
+        <div className="hidden h-4 w-px bg-[var(--border-strong)] sm:block" />
+        <AppNav />
 
         {breadcrumbs.length > 0 && (
           <nav className="hidden min-w-0 items-center gap-1 text-xs text-[var(--muted)] sm:flex">
