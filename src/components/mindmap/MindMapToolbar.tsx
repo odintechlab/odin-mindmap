@@ -82,7 +82,7 @@ export function MindMapToolbar({
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="glass flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] px-5">
+    <header className="glass relative z-50 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--border)] px-5">
       <div className="flex min-w-0 items-center gap-3.5">
         <div className="flex items-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 shadow-sm">

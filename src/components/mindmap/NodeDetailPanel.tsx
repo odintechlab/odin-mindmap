@@ -104,7 +104,7 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
   const statusOptions = data.statuses ?? (data.status ? [data.status] : []);
 
   return (
-    <aside className="glass-strong flex w-full flex-col border-[var(--border)] md:w-80 md:border-l shadow-surface-lg">
+    <aside className="glass-strong relative z-10 flex w-full flex-col border-[var(--border)] md:w-80 md:border-l shadow-surface-lg">
       <div className="h-0.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500" />
 
       <div className="flex items-center justify-between px-5 py-4">
