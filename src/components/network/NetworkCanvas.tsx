@@ -21,27 +21,23 @@ import "@xyflow/react/dist/style.css";
 
 import { PersonNode } from "./nodes/PersonNode";
 import { ProjectNode } from "./nodes/ProjectNode";
+import { NetworkEdge } from "./edges/NetworkEdge";
 import { NetworkDetailPanel } from "./NetworkDetailPanel";
+import { NetworkInteractionProvider } from "./NetworkInteractionContext";
 import { fetchNetworkGraph } from "@/lib/network/api";
 import { layoutNetworkNodes } from "@/lib/network/layout";
 import { fetchWorkspaces } from "@/lib/mindmap/api";
 import type {
-  NetworkEdge,
+  NetworkEdge as NetworkEdgeType,
   NetworkGraph,
   NetworkNode,
   NetworkViewMode,
 } from "@/types/network";
 
 const nodeTypes = { person: PersonNode, project: ProjectNode };
+const edgeTypes = { network: NetworkEdge };
 
-const MAX_EDGE_STROKE = 5;
-
-function edgeStrokeWidth(weight: number, maxWeight: number) {
-  if (maxWeight <= 1) return 1.5;
-  return 1 + (Math.min(weight, maxWeight) / maxWeight) * (MAX_EDGE_STROKE - 1);
-}
-
-function getNeighbors(nodeId: string, edges: NetworkEdge[]): Set<string> {
+function getNeighbors(nodeId: string, edges: NetworkEdgeType[]): Set<string> {
   const neighbors = new Set<string>([nodeId]);
   for (const e of edges) {
     if (e.source === nodeId) neighbors.add(e.target);
@@ -52,11 +48,8 @@ function getNeighbors(nodeId: string, edges: NetworkEdge[]): Set<string> {
 
 function filterGraph(
   graph: NetworkGraph,
-  opts: {
-    search: string;
-    collabOnly: boolean;
-  },
-): { nodes: NetworkNode[]; edges: NetworkEdge[] } {
+  opts: { search: string; collabOnly: boolean },
+): { nodes: NetworkNode[]; edges: NetworkEdgeType[] } {
   let { nodes, edges } = graph;
 
   if (opts.collabOnly) {
@@ -83,6 +76,62 @@ function filterGraph(
   return { nodes, edges };
 }
 
+function buildFlowElements(
+  nodes: NetworkNode[],
+  edges: NetworkEdgeType[],
+  positions: Map<string, { x: number; y: number }>,
+): { flowNodes: Node[]; flowEdges: Edge[] } {
+  let maxCollab = 1;
+  let maxMembership = 1;
+  for (const e of edges) {
+    if (e.kind === "collab") maxCollab = Math.max(maxCollab, e.weight);
+    else maxMembership = Math.max(maxMembership, e.weight);
+  }
+
+  const flowNodes: Node[] = nodes.map((n) => {
+    const pos = positions.get(n.id) ?? { x: 0, y: 0 };
+    const base = {
+      id: n.id,
+      type: n.type,
+      position: pos,
+      draggable: false,
+      selectable: true,
+    };
+
+    if (n.type === "person") {
+      return {
+        ...base,
+        data: {
+          label: n.label,
+          profilePicture: n.meta?.profilePicture,
+        },
+      };
+    }
+
+    return {
+      ...base,
+      data: {
+        label: n.label,
+        taskCount: n.meta?.taskCount,
+      },
+    };
+  });
+
+  const flowEdges: Edge[] = edges.map((e) => ({
+    id: e.id,
+    type: "network",
+    source: e.source,
+    target: e.target,
+    data: {
+      weight: e.weight,
+      kind: e.kind,
+      maxWeight: e.kind === "collab" ? maxCollab : maxMembership,
+    },
+  }));
+
+  return { flowNodes, flowEdges };
+}
+
 interface NetworkCanvasProps {
   teamId: string;
   viewMode: NetworkViewMode;
@@ -96,12 +145,16 @@ function NetworkCanvasInner({
   search,
   collabOnly,
 }: NetworkCanvasProps) {
-  const { fitView } = useReactFlow();
+  const { fitView, getNodes } = useReactFlow();
   const [graph, setGraph] = useState<NetworkGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
+  const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
+  const edgesRef = useRef<NetworkEdgeType[]>([]);
+  const initialFitDone = useRef(false);
   const layoutCache = useRef<Map<string, Map<string, { x: number; y: number }>>>(
     new Map(),
   );
@@ -113,6 +166,7 @@ function NetworkCanvasInner({
     setGraph(null);
     setFocusedId(null);
     setHoveredId(null);
+    initialFitDone.current = false;
 
     fetchNetworkGraph(teamId)
       .then((data) => {
@@ -135,10 +189,14 @@ function NetworkCanvasInner({
   const filtered = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     return filterGraph(graph, { search, collabOnly });
-  }, [graph, search, collabOnly, viewMode]);
+  }, [graph, search, collabOnly]);
 
   const positions = useMemo(() => {
-    const cacheKey = `${teamId}:${viewMode}:${filtered.nodes.map((n) => n.id).join(",")}`;
+    const nodeKey = filtered.nodes
+      .map((n) => n.id)
+      .sort()
+      .join(",");
+    const cacheKey = `${teamId}:${viewMode}:${nodeKey}`;
     const cached = layoutCache.current.get(cacheKey);
     if (cached) return cached;
 
@@ -147,96 +205,37 @@ function NetworkCanvasInner({
     return layout;
   }, [teamId, viewMode, filtered.nodes]);
 
-  const maxWeights = useMemo(() => {
-    let collab = 1;
-    let membership = 1;
-    for (const e of filtered.edges) {
-      if (e.kind === "collab") collab = Math.max(collab, e.weight);
-      else membership = Math.max(membership, e.weight);
-    }
-    return { collab, membership };
-  }, [filtered.edges]);
+  // Rebuild flow elements only when graph structure changes — not on hover/focus.
+  useEffect(() => {
+    edgesRef.current = filtered.edges;
+    const { flowNodes: nodes, flowEdges: edges } = buildFlowElements(
+      filtered.nodes,
+      filtered.edges,
+      positions,
+    );
+    setFlowNodes(nodes);
+    setFlowEdges(edges);
+    initialFitDone.current = false;
+  }, [filtered.nodes, filtered.edges, positions]);
 
-  const highlightSet = useMemo(() => {
-    if (!hoveredId && !focusedId) return null;
-    const id = hoveredId ?? focusedId;
-    if (!id) return null;
-    return getNeighbors(id, filtered.edges);
-  }, [hoveredId, focusedId, filtered.edges]);
-
-  const flowNodes: Node[] = useMemo(() => {
-    return filtered.nodes.map((n) => {
-      const pos = positions.get(n.id) ?? { x: 0, y: 0 };
-      const inHighlight = highlightSet?.has(n.id) ?? false;
-      const dimmed = highlightSet != null && !inHighlight;
-      const focused = focusedId === n.id;
-      const highlighted = hoveredId === n.id || (highlightSet != null && inHighlight && hoveredId != null);
-
-      const base = {
-        id: n.id,
-        type: n.type,
-        position: pos,
-        draggable: false,
-        selectable: true,
-      };
-
-      if (n.type === "person") {
-        return {
-          ...base,
-          data: {
-            label: n.label,
-            profilePicture: n.meta?.profilePicture,
-            dimmed,
-            highlighted,
-            focused,
-          },
-        };
-      }
-
-      return {
-        ...base,
-        data: {
-          label: n.label,
-          taskCount: n.meta?.taskCount,
-          dimmed,
-          highlighted,
-          focused,
-        },
-      };
+  useEffect(() => {
+    if (flowNodes.length === 0 || initialFitDone.current) return;
+    initialFitDone.current = true;
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 300 });
     });
-  }, [filtered.nodes, positions, highlightSet, hoveredId, focusedId]);
+  }, [flowNodes, fitView]);
 
-  const flowEdges: Edge[] = useMemo(() => {
-    return filtered.edges.map((e) => {
-      const inHighlight =
-        highlightSet == null ||
-        (highlightSet.has(e.source) && highlightSet.has(e.target));
-      const maxW = e.kind === "collab" ? maxWeights.collab : maxWeights.membership;
-      const stroke = e.kind === "collab" ? "var(--accent)" : "var(--border-strong)";
-      const opacity = highlightSet == null ? (e.kind === "collab" ? 0.7 : 0.45) : inHighlight ? 0.85 : 0.08;
-
-      return {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        style: {
-          stroke,
-          strokeWidth: edgeStrokeWidth(e.weight, maxW),
-          opacity,
-        },
-        animated: e.kind === "collab" && inHighlight && highlightSet != null,
-      };
-    });
-  }, [filtered.edges, highlightSet, maxWeights]);
-
-  const focusedNode = focusedId
-    ? filtered.nodes.find((n) => n.id === focusedId) ?? null
-    : null;
+  const activeId = hoveredId ?? focusedId;
+  const neighborIds = useMemo(() => {
+    if (!activeId) return null;
+    return getNeighbors(activeId, filtered.edges);
+  }, [activeId, filtered.edges]);
 
   const focusEgoNetwork = useCallback(
     (nodeId: string) => {
-      const neighbors = getNeighbors(nodeId, filtered.edges);
-      const egoNodes = flowNodes.filter((n) => neighbors.has(n.id));
+      const neighbors = getNeighbors(nodeId, edgesRef.current);
+      const egoNodes = getNodes().filter((n) => neighbors.has(n.id));
       if (egoNodes.length === 0) return;
       fitView({
         nodes: egoNodes,
@@ -245,7 +244,7 @@ function NetworkCanvasInner({
         maxZoom: 1.5,
       });
     },
-    [filtered.edges, flowNodes, fitView],
+    [getNodes, fitView],
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -267,6 +266,10 @@ function NetworkCanvasInner({
   const onPaneClick = useCallback(() => {
     setFocusedId(null);
   }, []);
+
+  const focusedNode = focusedId
+    ? filtered.nodes.find((n) => n.id === focusedId) ?? null
+    : null;
 
   if (loading) {
     return (
@@ -296,40 +299,47 @@ function NetworkCanvasInner({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col md:flex-row">
-      <div className="relative min-h-0 flex-1">
-        <ReactFlow
-          nodes={flowNodes}
-          edges={flowEdges}
-          nodeTypes={nodeTypes}
-          onNodeClick={onNodeClick}
-          onNodeMouseEnter={onNodeMouseEnter}
-          onNodeMouseLeave={onNodeMouseLeave}
-          onPaneClick={onPaneClick}
-          fitView
-          minZoom={0.05}
-          maxZoom={2}
-          proOptions={{ hideAttribution: true }}
-          onlyRenderVisibleElements
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable
-          className="canvas-bg"
-        >
-          <Background gap={24} size={1.5} color="var(--dot-color)" />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </div>
+    <NetworkInteractionProvider
+      hoveredId={hoveredId}
+      focusedId={focusedId}
+      neighborIds={neighborIds}
+    >
+      <div className="flex h-full min-h-0 flex-col md:flex-row">
+        <div className="relative min-h-0 flex-1">
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodeClick={onNodeClick}
+            onNodeMouseEnter={onNodeMouseEnter}
+            onNodeMouseLeave={onNodeMouseLeave}
+            onPaneClick={onPaneClick}
+            minZoom={0.05}
+            maxZoom={2}
+            proOptions={{ hideAttribution: true }}
+            onlyRenderVisibleElements
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable
+            elevateNodesOnSelect={false}
+            className="canvas-bg"
+          >
+            <Background gap={24} size={1.5} color="var(--dot-color)" />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        </div>
 
-      {focusedNode && (
-        <NetworkDetailPanel
-          node={focusedNode}
-          edges={graph.edges}
-          nodes={graph.nodes}
-          onClose={() => setFocusedId(null)}
-        />
-      )}
-    </div>
+        {focusedNode && (
+          <NetworkDetailPanel
+            node={focusedNode}
+            edges={graph.edges}
+            nodes={graph.nodes}
+            onClose={() => setFocusedId(null)}
+          />
+        )}
+      </div>
+    </NetworkInteractionProvider>
   );
 }
 

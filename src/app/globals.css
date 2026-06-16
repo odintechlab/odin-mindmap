@@ -105,6 +105,17 @@ body {
   filter: drop-shadow(0 0 3px var(--accent-glow));
 }
 
+.react-flow__edge-path.network-edge-animated {
+  stroke-dasharray: 6 4;
+  animation: network-edge-dash 0.55s linear infinite;
+}
+
+@keyframes network-edge-dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+
 .react-flow__controls {
   box-shadow: var(--surface-shadow) !important;
   border: 1px solid var(--border) !important;
