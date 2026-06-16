@@ -2,10 +2,14 @@
 
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/components/ui/ThemeProvider";
+import { StatusFilterDropdown } from "./StatusFilterDropdown";
+import type { TaskStatusFilter } from "@/lib/mindmap/constants";
 import type { NodeRecord } from "@/types/mindmap";
 
 interface MindMapToolbarProps {
   breadcrumbs: NodeRecord[];
+  statusFilter: TaskStatusFilter;
+  onStatusFilterChange: (filter: TaskStatusFilter) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
@@ -68,6 +72,8 @@ function IconMoon() {
 
 export function MindMapToolbar({
   breadcrumbs,
+  statusFilter,
+  onStatusFilterChange,
   onZoomIn,
   onZoomOut,
   onFitView,
@@ -106,7 +112,13 @@ export function MindMapToolbar({
         )}
       </div>
 
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="hidden text-xs font-medium text-[var(--muted)] sm:inline">Status</span>
+          <StatusFilterDropdown value={statusFilter} onChange={onStatusFilterChange} />
+        </div>
+
+        <div className="flex items-center gap-0.5">
         <Button variant="ghost" size="icon" onClick={onZoomOut} title="Zoom out (-)">
           <IconZoomOut />
         </Button>
@@ -124,6 +136,7 @@ export function MindMapToolbar({
         <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
           {theme === "dark" ? <IconSun /> : <IconMoon />}
         </Button>
+        </div>
       </div>
     </header>
   );

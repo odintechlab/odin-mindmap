@@ -30,3 +30,17 @@ export const TYPE_COLORS: Record<string, string> = {
   people: "#0d9488",
   member: "#14b8a6",
 };
+
+/** ClickUp status.type values used for task filtering */
+export type TaskStatusFilter = "all" | "open" | "custom" | "closed";
+
+export const STATUS_FILTER_OPTIONS: {
+  value: TaskStatusFilter;
+  label: string;
+  color: string;
+}[] = [
+  { value: "all", label: "All", color: "#a1a1aa" },
+  { value: "open", label: "To Do", color: "#94a3b8" },
+  { value: "custom", label: "In Progress", color: "#3b82f6" },
+  { value: "closed", label: "Completed", color: "#22c55e" },
+];

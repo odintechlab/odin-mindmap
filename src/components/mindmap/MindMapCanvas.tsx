@@ -16,10 +16,11 @@ import { MindMapToolbar } from "./MindMapToolbar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { buildVisibleGraph, getBreadcrumb } from "@/lib/mindmap/buildGraph";
 import { getAncestorIds, getSubtreeNodeIds } from "@/lib/mindmap/layout";
-import { TASK_PAGE_SIZE } from "@/lib/mindmap/constants";
+import { TASK_PAGE_SIZE, type TaskStatusFilter } from "@/lib/mindmap/constants";
 import { fetchWorkspaces, fetchChildren } from "@/lib/mindmap/api";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { parseNodeId, type MindMapNodeData, type NodeRecord } from "@/types/mindmap";
+import { parseNodeId, isTaskType, type MindMapNodeData, type NodeRecord } from "@/types/mindmap";
+import { matchesStatusFilter } from "@/lib/mindmap/statusFilter";
 
 const nodeTypes = { mindmap: MindMapNode };
 
@@ -36,6 +37,7 @@ function MindMapCanvasInner() {
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
   const [taskVisibleLimits, setTaskVisibleLimits] = useState<Map<string, number>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const fitOnNextLayout = useRef(false);
@@ -50,9 +52,29 @@ function MindMapCanvasInner() {
   );
 
   const { nodes, edges } = useMemo(
-    () => buildVisibleGraph(cache, expandedIds, selectedId, loadingIds, taskVisibleLimits),
-    [cache, expandedIds, selectedId, loadingIds, taskVisibleLimits],
+    () =>
+      buildVisibleGraph(
+        cache,
+        expandedIds,
+        selectedId,
+        loadingIds,
+        taskVisibleLimits,
+        statusFilter,
+      ),
+    [cache, expandedIds, selectedId, loadingIds, taskVisibleLimits, statusFilter],
   );
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const record = cache.get(selectedId);
+    if (
+      record &&
+      isTaskType(record.data.type) &&
+      !matchesStatusFilter(record.data, statusFilter)
+    ) {
+      setSelectedId(null);
+    }
+  }, [statusFilter, selectedId, cache]);
 
   // Initial load: workspaces, auto-expand workspace roots
   useEffect(() => {
@@ -334,6 +356,8 @@ function MindMapCanvasInner() {
     <div className="flex h-screen flex-col">
       <MindMapToolbar
         breadcrumbs={breadcrumbs}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
         onZoomIn={() => zoomIn({ duration: 200 })}
         onZoomOut={() => zoomOut({ duration: 200 })}
         onFitView={() => fitView({ padding: 0.2, duration: 300 })}

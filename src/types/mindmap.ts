@@ -19,7 +19,7 @@ export interface MindMapNodeData {
   clickupId: string;
   parentId: string | null;
   label: string;
-  status?: { name: string; color: string };
+  status?: { name: string; color: string; type?: string };
   priority?: { id: string; label: string; color: string };
   dueDate?: string | null;
   assignees?: MindMapAssignee[];

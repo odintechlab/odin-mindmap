@@ -74,7 +74,11 @@ export function NodeDetailPanel({ node, onClose, onUpdate }: NodeDetailPanelProp
         ...data,
         label: task.name,
         status: task.status
-          ? { name: task.status.status, color: task.status.color }
+          ? {
+              name: task.status.status,
+              color: task.status.color,
+              type: task.status.type,
+            }
           : data.status,
         priority: task.priority
           ? {

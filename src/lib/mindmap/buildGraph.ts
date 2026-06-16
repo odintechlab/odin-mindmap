@@ -1,8 +1,9 @@
 import type { Node, Edge } from "@xyflow/react";
 import type { MindMapNodeData, NodeRecord } from "@/types/mindmap";
-import { makeLoadMoreId } from "@/types/mindmap";
-import { TASK_PAGE_SIZE } from "./constants";
+import { isTaskType, makeLoadMoreId } from "@/types/mindmap";
+import { TASK_PAGE_SIZE, type TaskStatusFilter } from "./constants";
 import { getPathIds, layoutGraph } from "./layout";
+import { matchesStatusFilter } from "./statusFilter";
 
 function getDirectChildren(
   parentId: string,
@@ -21,9 +22,10 @@ function paginateTaskChildren(
   parentId: string,
   cache: Map<string, NodeRecord>,
   taskVisibleLimits: Map<string, number>,
+  hiddenByFilter: Set<string>,
 ): { visible: NodeRecord[]; loadMore: NodeRecord | null; useCompact: boolean } {
   const allTasks = getDirectChildren(parentId, cache).filter(
-    (r) => r.data.type === "task",
+    (r) => r.data.type === "task" && !hiddenByFilter.has(r.id),
   );
 
   const limit = taskVisibleLimits.get(parentId) ?? TASK_PAGE_SIZE;
@@ -57,10 +59,23 @@ export function buildVisibleGraph(
   selectedId: string | null,
   loadingIds: Set<string>,
   taskVisibleLimits: Map<string, number>,
+  statusFilter: TaskStatusFilter = "all",
 ): { nodes: Node<MindMapNodeData>[]; edges: Edge[] } {
   const pathIds = getPathIds(selectedId, cache);
   const visibleIds = new Set<string>();
   const hiddenByPagination = new Set<string>();
+  const hiddenByFilter = new Set<string>();
+
+  if (statusFilter !== "all") {
+    for (const [id, record] of cache) {
+      if (isTaskType(record.data.type) && !matchesStatusFilter(record.data, statusFilter)) {
+        hiddenByFilter.add(id);
+      }
+    }
+  }
+
+  const isHidden = (id: string) =>
+    hiddenByPagination.has(id) || hiddenByFilter.has(id);
   const compactTaskIds = new Set<string>();
   const loadMoreNodes: NodeRecord[] = [];
 
@@ -77,6 +92,7 @@ export function buildVisibleGraph(
       id,
       cache,
       taskVisibleLimits,
+      hiddenByFilter,
     );
     const visibleTaskIds = new Set(visible.map((v) => v.id));
 
@@ -97,7 +113,7 @@ export function buildVisibleGraph(
 
   function collectTaskDescendants(taskId: string) {
     for (const [childId, childRecord] of cache) {
-      if (childRecord.data.parentId === taskId && !hiddenByPagination.has(childId)) {
+      if (childRecord.data.parentId === taskId && !isHidden(childId)) {
         visibleIds.add(childId);
         if (expandedIds.has(childId)) {
           collectTaskDescendants(childId);
@@ -113,7 +129,12 @@ export function buildVisibleGraph(
     const record = cache.get(id);
 
     if (record?.data.type === "list" || record?.data.type === "member") {
-      const { visible, loadMore } = paginateTaskChildren(id, cache, taskVisibleLimits);
+      const { visible, loadMore } = paginateTaskChildren(
+        id,
+        cache,
+        taskVisibleLimits,
+        hiddenByFilter,
+      );
 
       for (const task of visible) {
         visibleIds.add(task.id);
@@ -126,10 +147,7 @@ export function buildVisibleGraph(
     }
 
     for (const [childId, childRecord] of cache) {
-      if (
-        childRecord.data.parentId === id &&
-        !hiddenByPagination.has(childId)
-      ) {
+      if (childRecord.data.parentId === id && !isHidden(childId)) {
         collectVisible(childId);
       }
     }

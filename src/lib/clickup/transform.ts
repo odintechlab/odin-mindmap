@@ -131,7 +131,11 @@ export function taskToNode(
       parentId: task.parent ? makeNodeId("task", task.parent) : parentId,
       label: task.name,
       status: task.status
-        ? { name: task.status.status, color: task.status.color }
+        ? {
+            name: task.status.status,
+            color: task.status.color,
+            type: task.status.type,
+          }
         : undefined,
       priority: task.priority
         ? {
@@ -208,6 +212,7 @@ export function applyTaskUpdate(
     next.status = {
       name: updatedTask.status.status,
       color: updatedTask.status.color,
+      type: updatedTask.status.type,
     };
   } else if (update.status !== undefined) {
     next.status = { ...next.status!, name: update.status };
