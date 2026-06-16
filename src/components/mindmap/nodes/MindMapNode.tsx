@@ -32,6 +32,39 @@ function ChevronIcon({ expanded }: { expanded?: boolean }) {
   );
 }
 
+function TeamworkIcon() {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 opacity-95"
+    >
+      <circle cx="5.5" cy="4.5" r="2.25" />
+      <circle cx="10.5" cy="4.5" r="2.25" />
+      <path d="M1.5 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" />
+      <path d="M6.5 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" />
+    </svg>
+  );
+}
+
+function CollaborationBadge({ assigneeCount }: { assigneeCount: number }) {
+  return (
+    <span
+      className="inline-flex h-4 items-center gap-1 rounded-full border border-[var(--border-strong)] bg-black/[0.03] px-1.5 text-[9px] font-semibold tracking-wide text-[var(--muted)] dark:bg-white/[0.06]"
+      title={`Collaboration · ${assigneeCount} people`}
+    >
+      <TeamworkIcon />
+      <span className="truncate">Collaboration</span>
+    </span>
+  );
+}
+
 function MindMapNodeComponent({ data }: NodeProps) {
   const node = data as MindMapNodeData;
   const isTask = node.type === "task" || node.type === "subtask";
@@ -40,6 +73,8 @@ function MindMapNodeComponent({ data }: NodeProps) {
   const accent = isLoadMore ? "#6366f1" : (TYPE_COLORS[node.type] ?? "#6366f1");
   const due = formatDueDate(node.dueDate);
   const width = node.compact ? "w-[200px]" : "w-[220px]";
+  const assigneeCount = node.assignees?.length ?? 0;
+  const isCollab = isTask && assigneeCount > 1;
 
   const handleClass = "!w-1.5 !h-1.5 !border-0 !bg-[var(--muted)] !opacity-0";
 
@@ -97,9 +132,16 @@ function MindMapNodeComponent({ data }: NodeProps) {
               </button>
             )}
             <div className="min-w-0 flex-1">
-              <p className={`truncate font-semibold leading-tight text-zinc-900 dark:text-zinc-50 ${node.compact ? "text-xs" : "text-sm"}`}>
-                {node.label}
-              </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p className={`min-w-0 flex-1 truncate font-semibold leading-tight text-zinc-900 dark:text-zinc-50 ${node.compact ? "text-xs" : "text-sm"}`}>
+                  {node.label}
+                </p>
+                {isCollab && (
+                  <span className="shrink-0">
+                    <CollaborationBadge assigneeCount={assigneeCount} />
+                  </span>
+                )}
+              </div>
               {!node.compact && (
                 <div className="mt-1 flex items-center gap-1.5">
                   <span
