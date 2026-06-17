@@ -1,5 +1,5 @@
-import { MindMapCanvas } from "@/components/mindmap/MindMapCanvas";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <MindMapCanvas />;
+  redirect("/mindmap");
 }

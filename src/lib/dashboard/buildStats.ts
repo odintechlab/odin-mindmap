@@ -1,6 +1,16 @@
 import { getGoals } from "@/lib/clickup/goals";
 import { getMembers } from "@/lib/clickup/members";
 import { getMilestoneTasks, getTasksForAssignee } from "@/lib/clickup/tasks";
+import { buildTeamWorkload } from "@/lib/dashboard/buildTeamWorkload";
+import {
+  buildWeeklyCompleted,
+  extractProjects,
+  getClosedAt,
+  parseRangeDays,
+  parseTimestamp,
+  toAssignee,
+  toTaskSummary,
+} from "@/lib/dashboard/taskMetrics";
 import { mapWithConcurrency } from "@/lib/utils/concurrency";
 import type {
   DashboardAssignee,
@@ -14,7 +24,7 @@ import type {
   DashboardStats,
   DashboardTaskSummary,
 } from "@/types/dashboard";
-import type { ClickUpMember, ClickUpTask, ClickUpUser } from "@/types/clickup";
+import type { ClickUpTask } from "@/types/clickup";
 
 const CONCURRENCY = 6;
 const RECENT_LIMIT = 15;
@@ -301,132 +311,6 @@ function buildMilestoneForecast(
   };
 }
 
-function buildTeamWorkload(
-  members: ClickUpMember[],
-  memberTasks: ClickUpTask[][],
-  listId: string | null,
-): DashboardMemberWorkload[] {
-  return members
-    .map((member, index) => {
-      let tasks = memberTasks[index] ?? [];
-      if (listId) {
-        tasks = tasks.filter((t) => t.list?.id === listId);
-      }
-
-      let done = 0;
-      let notDone = 0;
-      const statusMap = new Map<
-        string,
-        { label: string; color: string; tasks: ClickUpTask[] }
-      >();
-
-      for (const task of tasks) {
-        if (task.status.type === "closed") {
-          done++;
-        } else {
-          notDone++;
-          const key = task.status.status;
-          const existing = statusMap.get(key);
-          if (existing) {
-            existing.tasks.push(task);
-          } else {
-            statusMap.set(key, {
-              label: task.status.status,
-              color: task.status.color,
-              tasks: [task],
-            });
-          }
-        }
-      }
-
-      const total = done + notDone;
-      const byStatus = [...statusMap.values()]
-        .map((group) => ({
-          label: group.label,
-          color: group.color,
-          count: group.tasks.length,
-          tasks: group.tasks.map(toTaskSummary),
-        }))
-        .sort((a, b) => b.count - a.count);
-
-      return {
-        id: member.user.id,
-        name:
-          member.user.username ||
-          member.user.email ||
-          `User ${member.user.id}`,
-        profilePicture: member.user.profilePicture,
-        done,
-        notDone,
-        completionPct: total > 0 ? Math.round((done / total) * 100) : 0,
-        byStatus,
-      };
-    })
-    .filter((m) => m.done + m.notDone > 0)
-    .sort((a, b) => b.notDone - a.notDone || b.done - a.done);
-}
-
-function extractProjects(tasks: ClickUpTask[]): DashboardProject[] {
-  const map = new Map<string, { name: string; count: number }>();
-  for (const task of tasks) {
-    const id = task.list?.id;
-    if (!id) continue;
-    const existing = map.get(id);
-    if (existing) {
-      existing.count++;
-    } else {
-      map.set(id, { name: task.list!.name, count: 1 });
-    }
-  }
-  return [...map.entries()]
-    .map(([id, { name, count }]) => ({ id, name, taskCount: count }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function parseRangeDays(range: DashboardDateRange): number {
-  return Number.parseInt(range, 10);
-}
-
-function parseTimestamp(ts?: string | null): number | null {
-  if (!ts) return null;
-  const n = Number(ts);
-  return Number.isFinite(n) ? n : null;
-}
-
-function getClosedAt(task: ClickUpTask): number {
-  return (
-    parseTimestamp(task.date_closed) ??
-    parseTimestamp(task.date_done) ??
-    parseTimestamp(task.date_updated) ??
-    0
-  );
-}
-
-function toAssignee(user: ClickUpUser): DashboardAssignee {
-  return {
-    id: user.id,
-    name: user.username,
-    profilePicture: user.profilePicture,
-  };
-}
-
-function toTaskSummary(task: ClickUpTask): DashboardTaskSummary {
-  return {
-    id: task.id,
-    name: task.name,
-    status: {
-      label: task.status.status,
-      color: task.status.color,
-      type: task.status.type,
-    },
-    updatedAt: task.date_updated ?? task.date_closed ?? "",
-    dueDate: task.due_date,
-    assignees: task.assignees.map(toAssignee),
-    listName: task.list?.name,
-    url: task.url,
-  };
-}
-
 function buildMilestones(
   milestoneTasks: ClickUpTask[],
   now: number,
@@ -495,50 +379,4 @@ function buildGoals(
             : undefined,
     })),
   }));
-}
-
-function buildWeeklyCompleted(
-  tasks: ClickUpTask[],
-  now: number,
-): { weekLabel: string; count: number }[] {
-  const weeks: { start: number; label: string }[] = [];
-  for (let i = 3; i >= 0; i--) {
-    const start = startOfWeek(now - i * 7 * 86_400_000);
-    weeks.push({ start, label: formatWeekLabel(start) });
-  }
-
-  const counts = new Map(weeks.map((w) => [w.start, 0]));
-
-  for (const task of tasks) {
-    if (task.status.type !== "closed") continue;
-    const closedAt = getClosedAt(task);
-    if (!closedAt) continue;
-
-    for (const week of weeks) {
-      const weekEnd = week.start + 7 * 86_400_000;
-      if (closedAt >= week.start && closedAt < weekEnd) {
-        counts.set(week.start, (counts.get(week.start) ?? 0) + 1);
-        break;
-      }
-    }
-  }
-
-  return weeks.map((w) => ({
-    weekLabel: w.label,
-    count: counts.get(w.start) ?? 0,
-  }));
-}
-
-function startOfWeek(ts: number): number {
-  const d = new Date(ts);
-  const day = d.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - diff);
-  return d.getTime();
-}
-
-function formatWeekLabel(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
