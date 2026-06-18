@@ -30,9 +30,20 @@ export function AppLogo({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** Shared shell styling for the app header */
+export const appHeaderClass =
+  "safe-top glass sticky top-0 z-[100] shrink-0 overflow-visible border-b border-[var(--border)] px-4 py-2.5 sm:px-5 sm:py-3 lg:px-6 lg:py-2.5";
+
+/** Desktop header row — single line, consistent height across tabs */
+export const appHeaderDesktopRowClass = "hidden min-w-0 items-center gap-4 lg:flex";
+
 /** Shared select styling for header controls */
 export const headerSelectClass =
   "glass-solid w-full min-w-0 truncate min-h-[2.75rem] rounded-xl border border-[var(--border-strong)] px-3 py-2 text-xs font-medium leading-none text-zinc-700 shadow-sm dark:text-zinc-200 lg:min-h-[2.25rem] lg:max-w-[10.5rem] lg:px-2.5 lg:py-1.5 xl:max-w-[12rem]";
+
+/** Compact trigger for header dropdowns — matches select height on desktop */
+export const headerDropdownTriggerClass =
+  "glass-solid flex items-center gap-2 rounded-xl border border-[var(--border-strong)] px-2.5 py-1.5 text-xs font-medium leading-none text-zinc-700 shadow-sm transition-colors hover:bg-black/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06] lg:min-h-[2.25rem]";
 
 /** Groups workspace/project filters into one compact cluster on desktop */
 export function HeaderContextGroup({ children }: { children: React.ReactNode }) {
@@ -85,7 +96,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ controls, breadcrumbs }: AppHeaderProps) {
   return (
-    <header className="safe-top glass relative z-50 shrink-0 overflow-x-hidden border-b border-[var(--border)] px-4 py-2.5 sm:px-5 sm:py-3 lg:px-6 lg:py-2.5">
+    <header className={appHeaderClass}>
       {/* Mobile & tablet: brand, then nav + contextual controls */}
       <div className="flex flex-col gap-2.5 lg:hidden">
         <AppLogo compact />
@@ -96,7 +107,7 @@ export function AppHeader({ controls, breadcrumbs }: AppHeaderProps) {
       </div>
 
       {/* Desktop: left-aligned brand + nav, controls on the right */}
-      <div className="hidden min-w-0 items-center gap-4 lg:flex">
+      <div className={appHeaderDesktopRowClass}>
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <AppLogo />
           <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
@@ -109,7 +120,7 @@ export function AppHeader({ controls, breadcrumbs }: AppHeaderProps) {
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 xl:gap-2.5">{controls}</div>
+        <div className="flex shrink-0 flex-nowrap items-center gap-2 xl:gap-2.5">{controls}</div>
       </div>
     </header>
   );

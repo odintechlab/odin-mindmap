@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { headerDropdownTriggerClass } from "@/components/layout/AppHeader";
 import { STATUS_FILTER_OPTIONS, type TaskStatusFilter } from "@/lib/mindmap/constants";
 
 interface StatusFilterDropdownProps {
@@ -63,7 +64,7 @@ export function StatusFilterDropdown({ value, onChange }: StatusFilterDropdownPr
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="glass-solid flex items-center gap-2 rounded-xl border border-[var(--border-strong)] py-1.5 pl-2.5 pr-2 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-black/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+        className={headerDropdownTriggerClass}
       >
         <StatusIcon filter={value} color={current.color} />
         <span>{current.label}</span>

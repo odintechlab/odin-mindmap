@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Avatar } from "@/components/ui/Avatar";
 import { AppNav } from "@/components/AppNav";
-import { AppLogo, headerSelectClass } from "@/components/layout/AppHeader";
+import { AppLogo, appHeaderClass, appHeaderDesktopRowClass, headerDropdownTriggerClass, headerSelectClass, HeaderActions, HeaderContextGroup, HeaderControl } from "@/components/layout/AppHeader";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import type { TaskStatusFilter } from "@/lib/mindmap/constants";
@@ -140,7 +140,7 @@ function ScopeDropdown({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="glass-solid flex items-center gap-2 rounded-xl border border-[var(--border-strong)] py-1.5 pl-2.5 pr-2 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-black/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+        className={headerDropdownTriggerClass}
         title="Scope"
       >
         {scope.mode === "member" ? (
@@ -301,7 +301,7 @@ export function MindMapToolbar({
   }, [pinOpen]);
 
   return (
-    <header className="safe-top glass relative z-50 shrink-0 overflow-x-hidden border-b border-[var(--border)] px-4 py-2.5 sm:px-5 sm:py-3 lg:px-6 lg:py-2.5">
+    <header className={appHeaderClass}>
       {/* Mobile */}
       <div className="flex flex-col gap-2.5 lg:hidden">
         <AppLogo compact />
@@ -406,7 +406,7 @@ export function MindMapToolbar({
       </div>
 
       {/* Desktop */}
-      <div className="hidden min-w-0 items-center gap-4 lg:flex">
+      <div className={appHeaderDesktopRowClass}>
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <AppLogo />
           <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
@@ -427,25 +427,29 @@ export function MindMapToolbar({
           )}
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <select
-            value={activeTeamId ?? ""}
-            onChange={(e) => onTeamChange(e.target.value)}
-            disabled={wsLoading || workspaces.length === 0}
-            className={headerSelectClass}
-            aria-label="Workspace"
-          >
-            {workspaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex shrink-0 flex-nowrap items-center gap-2 xl:gap-2.5">
+          <HeaderContextGroup>
+            <HeaderControl label="Workspace" grouped>
+              <select
+                value={activeTeamId ?? ""}
+                onChange={(e) => onTeamChange(e.target.value)}
+                disabled={wsLoading || workspaces.length === 0}
+                className={headerSelectClass}
+                aria-label="Workspace"
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </HeaderControl>
+          </HeaderContextGroup>
 
           <ScopeDropdown scope={scope} onChange={onScopeChange} members={members} />
           <StatusFilterDropdown value={statusFilter} onChange={onStatusFilterChange} />
 
-          <div className="flex items-center gap-0.5">
+          <HeaderActions>
             <div className="relative">
               <Button
                 variant="ghost"
@@ -511,7 +515,7 @@ export function MindMapToolbar({
             <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
               {theme === "dark" ? <IconSun /> : <IconMoon />}
             </Button>
-          </div>
+          </HeaderActions>
         </div>
       </div>
     </header>

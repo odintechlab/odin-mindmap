@@ -65,7 +65,7 @@ export function AppNav() {
 
       <nav
         aria-label="Main"
-        className="no-scrollbar hidden min-w-0 items-center gap-0.5 overflow-x-auto whitespace-nowrap lg:flex"
+        className="hidden min-w-0 items-center gap-0.5 overflow-visible whitespace-nowrap lg:flex"
       >
         <NavLinks items={PRIMARY_NAV} pathname={pathname} />
         <div
