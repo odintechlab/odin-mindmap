@@ -40,7 +40,7 @@ export default function NetworkPage() {
   const [search, setSearch] = useState("");
 
   return (
-    <div className="flex min-h-[100dvh] flex-col">
+    <div className="flex h-[100dvh] flex-col overflow-hidden">
       <AppHeader
         controls={
           <>
@@ -108,7 +108,7 @@ export default function NetworkPage() {
         }
       />
 
-      <div className="safe-bottom min-h-0 flex-1">
+      <div className="canvas-bg safe-bottom flex min-h-0 flex-1 flex-col">
         {activeTeamId ? (
           <NetworkCanvas
             teamId={activeTeamId}

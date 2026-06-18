@@ -150,8 +150,6 @@ function NetworkCanvasInner({
   const [error, setError] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
-  const [flowEdges, setFlowEdges] = useState<Edge[]>([]);
   const edgesRef = useRef<NetworkEdgeType[]>([]);
   const initialFitDone = useRef(false);
   const layoutCache = useRef<Map<string, Map<string, { x: number; y: number }>>>(
@@ -204,18 +202,20 @@ function NetworkCanvasInner({
     return layout;
   }, [teamId, viewMode, filtered.nodes]);
 
-  // Rebuild flow elements only when graph structure changes — not on hover/focus.
+  const { flowNodes, flowEdges } = useMemo(() => {
+    if (filtered.nodes.length === 0) {
+      return { flowNodes: [] as Node[], flowEdges: [] as Edge[] };
+    }
+    return buildFlowElements(filtered.nodes, filtered.edges, positions);
+  }, [filtered.nodes, filtered.edges, positions]);
+
   useEffect(() => {
     edgesRef.current = filtered.edges;
-    const { flowNodes: nodes, flowEdges: edges } = buildFlowElements(
-      filtered.nodes,
-      filtered.edges,
-      positions,
-    );
-    setFlowNodes(nodes);
-    setFlowEdges(edges);
+  }, [filtered.edges]);
+
+  useEffect(() => {
     initialFitDone.current = false;
-  }, [filtered.nodes, filtered.edges, positions]);
+  }, [teamId, viewMode, search, collabOnly]);
 
   useEffect(() => {
     if (flowNodes.length === 0 || initialFitDone.current) return;
@@ -272,7 +272,7 @@ function NetworkCanvasInner({
 
   if (loading) {
     return (
-      <div className="canvas-bg flex h-full flex-col items-center justify-center gap-4">
+      <div className="canvas-bg flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-4">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
         <p className="text-sm font-medium text-[var(--muted)]">
           Building network graph…
@@ -283,7 +283,7 @@ function NetworkCanvasInner({
 
   if (error) {
     return (
-      <div className="canvas-bg flex h-full items-center justify-center px-6">
+      <div className="canvas-bg flex h-full min-h-0 flex-1 items-center justify-center px-6">
         <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
       </div>
     );
@@ -291,7 +291,7 @@ function NetworkCanvasInner({
 
   if (!graph || filtered.nodes.length === 0) {
     return (
-      <div className="canvas-bg flex h-full items-center justify-center px-6">
+      <div className="canvas-bg flex h-full min-h-0 flex-1 items-center justify-center px-6">
         <p className="text-sm font-medium text-[var(--muted)]">No nodes to display</p>
       </div>
     );
@@ -303,8 +303,8 @@ function NetworkCanvasInner({
       focusedId={focusedId}
       neighborIds={neighborIds}
     >
-      <div className="flex h-full min-h-0 flex-col md:flex-row">
-        <div className="relative min-h-0 flex-1">
+      <div className="flex h-full min-h-0 flex-1 flex-col md:flex-row">
+        <div className="relative h-full min-h-0 flex-1">
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -323,6 +323,7 @@ function NetworkCanvasInner({
             elementsSelectable
             elevateNodesOnSelect={false}
             className="canvas-bg"
+            style={{ width: "100%", height: "100%" }}
           >
             <Background gap={24} size={1.5} color="var(--dot-color)" />
             <Controls showInteractive={false} />
@@ -344,9 +345,11 @@ function NetworkCanvasInner({
 
 export function NetworkCanvas(props: NetworkCanvasProps) {
   return (
-    <ReactFlowProvider>
-      <NetworkCanvasInner {...props} />
-    </ReactFlowProvider>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <ReactFlowProvider>
+        <NetworkCanvasInner key={props.teamId} {...props} />
+      </ReactFlowProvider>
+    </div>
   );
 }
 
