@@ -14,10 +14,11 @@ import "@xyflow/react/dist/style.css";
 import { MindMapNode } from "./nodes/MindMapNode";
 import { MindMapToolbar, type MemberOption, type MindMapScope } from "./MindMapToolbar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
+import { CreateTaskDialog } from "./CreateTaskDialog";
 import { buildVisibleGraph, getBreadcrumb } from "@/lib/mindmap/buildGraph";
 import { getAncestorIds, getSubtreeNodeIds } from "@/lib/mindmap/layout";
 import { TASK_PAGE_SIZE, type TaskStatusFilter } from "@/lib/mindmap/constants";
-import { fetchWorkspaces, fetchChildren } from "@/lib/mindmap/api";
+import { fetchWorkspaces, fetchChildren, createTask, deleteTask } from "@/lib/mindmap/api";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { usePersistedWorkspace } from "@/hooks/usePersistedWorkspace";
 import { useAdminUnlocked } from "@/hooks/useAdminUnlocked";
@@ -66,6 +67,12 @@ function MindMapCanvasInner() {
     }
   });
   const [members, setMembers] = useState<MemberOption[]>([]);
+  const [createTaskContext, setCreateTaskContext] = useState<{
+    listId: string;
+    parentNodeId: string;
+    parentTaskId?: string;
+    title: string;
+  } | null>(null);
   const fitOnNextLayout = useRef(false);
   const focusAfterLayoutRef = useRef<{ nodeId: string; mode: "subtree" | "self" } | null>(null);
   const cacheRef = useRef(cache);
@@ -158,8 +165,9 @@ function MindMapCanvasInner() {
         loadingIds,
         taskVisibleLimits,
         statusFilter,
+        adminUnlocked,
       ),
-    [viewCache, expandedIds, selectedId, loadingIds, taskVisibleLimits, statusFilter],
+    [viewCache, expandedIds, selectedId, loadingIds, taskVisibleLimits, statusFilter, adminUnlocked],
   );
 
   useEffect(() => {
@@ -284,8 +292,20 @@ function MindMapCanvasInner() {
                 parentId: null,
                 label: scope.label,
                 assignees: scope.profilePicture
-                  ? [{ username: scope.label, profilePicture: scope.profilePicture }]
-                  : [{ username: scope.label, profilePicture: null }],
+                  ? [
+                      {
+                        id: parseInt(scope.userId, 10),
+                        username: scope.label,
+                        profilePicture: scope.profilePicture,
+                      },
+                    ]
+                  : [
+                      {
+                        id: parseInt(scope.userId, 10),
+                        username: scope.label,
+                        profilePicture: null,
+                      },
+                    ],
                 workspaceId: scope.teamId,
                 hasChildren: true,
                 childrenLoaded: false,
@@ -471,7 +491,9 @@ function MindMapCanvasInner() {
   const toggleExpand = useCallback(
     async (nodeId: string) => {
       const record = cacheRef.current.get(nodeId);
-      if (!record?.data.hasChildren) return;
+      const canExpandAsAdmin =
+        adminUnlocked && record && isTaskType(record.data.type) && Boolean(record.data.listId);
+      if (!record?.data.hasChildren && !canExpandAsAdmin) return;
 
       const isExpanded = expandedIds.has(nodeId);
 
@@ -493,7 +515,7 @@ function MindMapCanvasInner() {
       setExpandedIds((prev) => cloneSet(prev).add(nodeId));
       focusAfterLayoutRef.current = { nodeId, mode: "subtree" };
     },
-    [expandedIds, loadChildren],
+    [expandedIds, loadChildren, adminUnlocked],
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -508,6 +530,22 @@ function MindMapCanvasInner() {
 
       const nodeData = node.data as MindMapNodeData;
 
+      if (target.closest("[data-add-inline]")) {
+        if (nodeData.addTaskListId) {
+          if (!expandedIds.has(node.id)) {
+            void toggleExpand(node.id);
+          }
+          setCreateTaskContext({
+            listId: nodeData.addTaskListId,
+            parentNodeId: node.id,
+            parentTaskId: nodeData.addTaskParentTaskId,
+            title: nodeData.addTaskParentTaskId ? "New subtask" : "New task",
+          });
+          setSelectedId(node.id);
+        }
+        return;
+      }
+
       if (nodeData.type === "loadmore") return;
 
       if (nodeData.hasChildren) {
@@ -516,12 +554,13 @@ function MindMapCanvasInner() {
 
       setSelectedId(node.id);
     },
-    [toggleExpand, loadMoreTasks],
+    [toggleExpand, loadMoreTasks, expandedIds],
   );
 
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
-      if ((node.data as MindMapNodeData).type === "loadmore") return;
+      const type = (node.data as MindMapNodeData).type;
+      if (type === "loadmore") return;
       toggleExpand(node.id);
     },
     [toggleExpand],
@@ -547,6 +586,141 @@ function MindMapCanvasInner() {
       return next;
     });
   }, []);
+
+  const handleTaskCreated = useCallback(
+    async ({ name, assigneeIds }: { name: string; assigneeIds: number[] }) => {
+      if (!createTaskContext) return;
+
+      const { listId, parentNodeId, parentTaskId } = createTaskContext;
+      const { node: created } = await createTask(listId, {
+        name,
+        parent: parentTaskId,
+        assignees: assigneeIds,
+      });
+
+      const newRecord: NodeRecord = {
+        id: created.id,
+        data: {
+          ...created.data,
+          parentId: created.data.parentId ?? parentNodeId,
+        },
+      };
+
+      setCache((prev) => {
+        const next = new Map(prev);
+        next.set(newRecord.id, newRecord);
+
+        const parent = next.get(parentNodeId);
+        if (parent) {
+          const childCount = (parent.data.childCount ?? 0) + 1;
+          next.set(parentNodeId, {
+            ...parent,
+            data: {
+              ...parent.data,
+              hasChildren: true,
+              childCount,
+            },
+          });
+        }
+
+        return next;
+      });
+
+      setExpandedIds((prev) => cloneSet(prev).add(parentNodeId));
+      setSelectedId(newRecord.id);
+      focusAfterLayoutRef.current = { nodeId: parentNodeId, mode: "subtree" };
+    },
+    [createTaskContext],
+  );
+
+  const handleTaskDeleted = useCallback(async (nodeId: string) => {
+    const record = cacheRef.current.get(nodeId);
+    if (!record || !isTaskType(record.data.type)) return;
+
+    await deleteTask(record.data.clickupId);
+
+    setCache((prev) => {
+      const next = new Map(prev);
+      const toRemove = new Set<string>([nodeId]);
+
+      let added = true;
+      while (added) {
+        added = false;
+        for (const [id, rec] of next) {
+          if (rec.data.parentId && toRemove.has(rec.data.parentId) && !toRemove.has(id)) {
+            toRemove.add(id);
+            added = true;
+          }
+        }
+      }
+
+      for (const id of toRemove) next.delete(id);
+
+      const parentId = record.data.parentId;
+      if (parentId) {
+        const parent = next.get(parentId);
+        if (parent) {
+          const remaining = [...next.values()].filter((r) => r.data.parentId === parentId).length;
+          next.set(parentId, {
+            ...parent,
+            data: {
+              ...parent.data,
+              childCount: remaining > 0 ? remaining : undefined,
+              hasChildren: remaining > 0 || (adminUnlocked && isTaskType(parent.data.type)),
+            },
+          });
+        }
+      }
+
+      return next;
+    });
+
+    setSelectedId(null);
+  }, [adminUnlocked]);
+
+  const handleAddSubtask = useCallback(
+    async (parentNodeId: string, name: string, assignees: number[] = []) => {
+      const parent = cacheRef.current.get(parentNodeId);
+      const listId = parent?.data.listId as string | undefined;
+      if (!parent || !listId || !isTaskType(parent.data.type)) {
+        throw new Error("Cannot add subtask to this node");
+      }
+
+      const { node: created } = await createTask(listId, {
+        name,
+        parent: parent.data.clickupId,
+        assignees,
+      });
+
+      const newRecord: NodeRecord = {
+        id: created.id,
+        data: {
+          ...created.data,
+          parentId: created.data.parentId ?? parentNodeId,
+        },
+      };
+
+      setCache((prev) => {
+        const next = new Map(prev);
+        next.set(newRecord.id, newRecord);
+        const childCount = (parent.data.childCount ?? 0) + 1;
+        next.set(parentNodeId, {
+          ...parent,
+          data: {
+            ...parent.data,
+            hasChildren: true,
+            childCount,
+          },
+        });
+        return next;
+      });
+
+      setExpandedIds((prev) => cloneSet(prev).add(parentNodeId));
+      setSelectedId(newRecord.id);
+      focusAfterLayoutRef.current = { nodeId: parentNodeId, mode: "subtree" };
+    },
+    [],
+  );
 
   return (
     <div className="flex h-screen flex-col">
@@ -626,9 +800,30 @@ function MindMapCanvasInner() {
             readOnly={!adminUnlocked}
             onClose={() => setSelectedId(null)}
             onUpdate={handleNodeUpdate}
+            members={activeTeamId ? members.filter((m) => m.teamId === activeTeamId) : members}
+            onDelete={
+              adminUnlocked && isTaskType(selectedNode.data.type)
+                ? () => handleTaskDeleted(selectedNode.id)
+                : undefined
+            }
+            onAddSubtask={
+              adminUnlocked &&
+              isTaskType(selectedNode.data.type) &&
+              selectedNode.data.listId
+                ? (name) => handleAddSubtask(selectedNode.id, name)
+                : undefined
+            }
           />
         )}
       </div>
+
+      <CreateTaskDialog
+        open={createTaskContext !== null}
+        title={createTaskContext?.title ?? "New task"}
+        onClose={() => setCreateTaskContext(null)}
+        onCreate={handleTaskCreated}
+        members={activeTeamId ? members.filter((m) => m.teamId === activeTeamId) : members}
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ export type NodeType =
   | "member";
 
 export interface MindMapAssignee {
+  id: number;
   username: string;
   profilePicture?: string | null;
 }
@@ -35,6 +36,12 @@ export interface MindMapNodeData {
   hasChildren?: boolean;
   /** For loadmore nodes — the list node id to paginate */
   listParentId?: string;
+  /** For addtask nodes — parent node to create under */
+  addTaskParentId?: string;
+  /** For addtask nodes — ClickUp list id for the new task */
+  addTaskListId?: string;
+  /** For addtask nodes — optional parent task id (subtask) */
+  addTaskParentTaskId?: string;
   /** Remaining task count shown on load-more node */
   remainingCount?: number;
   /** Render in compact mode (dense lists) */

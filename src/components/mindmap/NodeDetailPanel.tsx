@@ -9,12 +9,17 @@ import { Avatar } from "@/components/ui/Avatar";
 import { PRIORITY_OPTIONS } from "@/lib/mindmap/constants";
 import { updateTask } from "@/lib/mindmap/api";
 import { isTaskType, type MindMapNodeData, type NodeRecord } from "@/types/mindmap";
+import type { MemberOption } from "./MindMapToolbar";
+import type { ClickUpUser } from "@/types/clickup";
 
 interface NodeDetailPanelProps {
   node: NodeRecord | null;
   readOnly?: boolean;
   onClose: () => void;
   onUpdate: (nodeId: string, data: MindMapNodeData) => void;
+  onDelete?: () => Promise<void>;
+  onAddSubtask?: (name: string) => Promise<void>;
+  members?: MemberOption[];
 }
 
 function formatDate(ms: string | null | undefined): string {
@@ -34,11 +39,23 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: NodeDetailPanelProps) {
+export function NodeDetailPanel({
+  node,
+  readOnly = false,
+  onClose,
+  onUpdate,
+  onDelete,
+  onAddSubtask,
+  members = [],
+}: NodeDetailPanelProps) {
   const [name, setName] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState<string>("");
+  const [subtaskName, setSubtaskName] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [addingSubtask, setAddingSubtask] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const data = node?.data;
@@ -49,6 +66,12 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
     setName(data.label);
     setStatus(data.status?.name ?? "");
     setPriority(data.priority?.id ?? "");
+    setSubtaskName("");
+    setAssigneeIds(
+      (data.assignees ?? [])
+        .map((a) => a.id)
+        .filter((n) => typeof n === "number" && !Number.isNaN(n)),
+    );
     setError(null);
   }, [node?.id, data]);
 
@@ -59,13 +82,26 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
     setError(null);
 
     try {
-      const payload: { name?: string; status?: string; priority?: number | null } = {};
+      const payload: {
+        name?: string;
+        status?: string;
+        priority?: number | null;
+        assignees?: { add?: number[]; rem?: number[] };
+      } = {};
 
       if (name !== data.label) payload.name = name;
       if (status && status !== data.status?.name) payload.status = status;
       if (priority !== (data.priority?.id ?? "")) {
         payload.priority = priority ? parseInt(priority, 10) : null;
       }
+
+      const existingAssignees = new Set((data.assignees ?? []).map((a) => a.id));
+      const nextAssignees = new Set(assigneeIds);
+      const add: number[] = [];
+      const rem: number[] = [];
+      for (const id of nextAssignees) if (!existingAssignees.has(id)) add.push(id);
+      for (const id of existingAssignees) if (!nextAssignees.has(id)) rem.push(id);
+      if (add.length > 0 || rem.length > 0) payload.assignees = { add, rem };
 
       if (Object.keys(payload).length === 0) return;
 
@@ -88,6 +124,11 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
               color: task.priority.color,
             }
           : undefined,
+        assignees: task.assignees?.map((a: ClickUpUser) => ({
+          id: a.id,
+          username: a.username,
+          profilePicture: a.profilePicture,
+        })),
       };
 
       if (!task.priority) updated.priority = undefined;
@@ -100,9 +141,48 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm(
+      `Delete "${data?.label}" from ClickUp? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete task");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleAddSubtask = async () => {
+    if (!onAddSubtask) return;
+    const trimmed = subtaskName.trim();
+    if (!trimmed) {
+      setError("Enter a subtask name");
+      return;
+    }
+
+    setAddingSubtask(true);
+    setError(null);
+    try {
+      await onAddSubtask(trimmed);
+      setSubtaskName("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create subtask");
+    } finally {
+      setAddingSubtask(false);
+    }
+  };
+
   if (!node || !data) return null;
 
   const statusOptions = data.statuses ?? (data.status ? [data.status] : []);
+  const sortedMembers = [...members].sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <aside className="glass-strong relative z-10 flex w-full flex-col border-[var(--border)] md:w-80 md:border-l shadow-surface-lg">
@@ -159,6 +239,39 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
                 ))}
               </Select>
             </div>
+
+            {sortedMembers.length > 0 && (
+              <div>
+                <FieldLabel>Assignees</FieldLabel>
+                <div className="max-h-48 overflow-auto rounded-xl border border-[var(--border-strong)] bg-[var(--panel-solid)] p-2">
+                  <div className="grid grid-cols-1 gap-1">
+                    {sortedMembers.map((m) => {
+                      const id = parseInt(m.userId, 10);
+                      const checked = assigneeIds.includes(id);
+                      return (
+                        <label
+                          key={`${m.teamId}:${m.userId}`}
+                          className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-800 hover:bg-black/5 dark:text-zinc-200 dark:hover:bg-white/8"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={saving}
+                            onChange={() => {
+                              setAssigneeIds((prev) => {
+                                if (prev.includes(id)) return prev.filter((x) => x !== id);
+                                return [...prev, id];
+                              });
+                            }}
+                          />
+                          <span className="truncate">{m.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Button onClick={handleSave} disabled={saving} className="w-full">
               {saving ? "Saving…" : "Save changes"}
@@ -226,6 +339,40 @@ export function NodeDetailPanel({ node, readOnly = false, onClose, onUpdate }: N
               <path d="M2 10L10 2M10 2H5M10 2v5" />
             </svg>
           </a>
+        )}
+
+        {onAddSubtask && (
+          <div className="rounded-xl border border-dashed border-emerald-400/50 bg-emerald-50/50 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/20">
+            <FieldLabel>Add subtask</FieldLabel>
+            <div className="flex gap-2">
+              <Input
+                value={subtaskName}
+                onChange={(e) => setSubtaskName(e.target.value)}
+                placeholder="Subtask name"
+                disabled={addingSubtask}
+              />
+              <Button
+                type="button"
+                onClick={handleAddSubtask}
+                disabled={addingSubtask}
+                className="shrink-0"
+              >
+                {addingSubtask ? "…" : "Add"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {onDelete && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-full border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30"
+          >
+            {deleting ? "Deleting…" : "Delete task"}
+          </Button>
         )}
       </div>
     </aside>

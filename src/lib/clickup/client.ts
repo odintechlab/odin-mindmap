@@ -47,7 +47,9 @@ export async function clickup<T>(
     throw new ClickUpError(message, res.status);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export function clickupErrorResponse(error: unknown): Response {

@@ -60,6 +60,7 @@ export function buildVisibleGraph(
   loadingIds: Set<string>,
   taskVisibleLimits: Map<string, number>,
   statusFilter: TaskStatusFilter = "all",
+  adminUnlocked = false,
 ): { nodes: Node<MindMapNodeData>[]; edges: Edge[] } {
   const pathIds = getPathIds(selectedId, cache);
   const visibleIds = new Set<string>();
@@ -111,16 +112,6 @@ export function buildVisibleGraph(
     if (loadMore) loadMoreNodes.push(loadMore);
   }
 
-  function collectTaskDescendants(taskId: string) {
-    for (const [childId, childRecord] of cache) {
-      if (childRecord.data.parentId === taskId && !isHidden(childId)) {
-        visibleIds.add(childId);
-        if (expandedIds.has(childId)) {
-          collectTaskDescendants(childId);
-        }
-      }
-    }
-  }
 
   function collectVisible(id: string) {
     visibleIds.add(id);
@@ -140,9 +131,10 @@ export function buildVisibleGraph(
       );
 
       for (const task of visible) {
-        visibleIds.add(task.id);
         if (expandedIds.has(task.id)) {
-          collectTaskDescendants(task.id);
+          collectVisible(task.id);
+        } else {
+          visibleIds.add(task.id);
         }
       }
       if (loadMore) visibleIds.add(loadMore.id);
@@ -169,13 +161,15 @@ export function buildVisibleGraph(
         hiddenByFilter,
       );
       for (const task of visible) {
-        visibleIds.add(task.id);
-        if (expandedIds.has(task.id)) collectTaskDescendants(task.id);
+        if (expandedIds.has(task.id)) {
+          collectVisible(task.id);
+        } else {
+          visibleIds.add(task.id);
+        }
       }
       if (loadMore) visibleIds.add(loadMore.id);
 
-      // If there are tasks but we didn't paginate (edge case), ensure tasks are visible.
-      // (Mostly here for safety; paginateTaskChildren is authoritative.)
+      // Allow adding tasks directly under member only when tasks (not lists) are shown.
       if (taskChildren.length > 0 && visible.length === 0) {
         for (const t of taskChildren) visibleIds.add(t.id);
       }
@@ -204,13 +198,30 @@ export function buildVisibleGraph(
     const record = cached ?? loadMore;
     if (!record) continue;
 
+    const canAddTask =
+      adminUnlocked &&
+      (record.data.type === "list" ||
+        (isTaskType(record.data.type) && Boolean(record.data.listId)));
+
     const data: MindMapNodeData = {
       ...record.data,
       isOnPath: pathIds.has(id),
       isSelected: id === selectedId,
       isExpanded: expandedIds.has(id),
       isLoading: loadingIds.has(id),
-      compact: compactTaskIds.has(id) || record.data.type === "loadmore",
+      addTaskParentId: canAddTask ? id : undefined,
+      addTaskListId:
+        record.data.type === "list"
+          ? record.data.clickupId
+          : isTaskType(record.data.type)
+            ? (record.data.listId as string | undefined)
+            : undefined,
+      addTaskParentTaskId:
+        isTaskType(record.data.type) && canAddTask ? record.data.clickupId : undefined,
+      hasChildren: record.data.hasChildren || canAddTask,
+      compact:
+        compactTaskIds.has(id) ||
+        record.data.type === "loadmore",
     };
 
     rawNodes.push({
