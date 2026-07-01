@@ -129,7 +129,7 @@ export function memberToNode(
       parentId,
       label: user.username || user.email || `User ${user.id}`,
       assignees: [
-        { username: user.username, profilePicture: user.profilePicture },
+        { id: user.id, username: user.username, profilePicture: user.profilePicture },
       ],
       workspaceId,
       hasChildren: true,
@@ -169,6 +169,7 @@ export function taskToNode(
         : undefined,
       dueDate: task.due_date ?? null,
       assignees: task.assignees?.map((a) => ({
+        id: a.id,
         username: a.username,
         profilePicture: a.profilePicture,
       })),

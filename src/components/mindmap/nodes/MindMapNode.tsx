@@ -75,6 +75,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
   const width = node.compact ? "w-[200px]" : "w-[220px]";
   const assigneeCount = node.assignees?.length ?? 0;
   const isCollab = isTask && assigneeCount > 1;
+  const canAddInline = Boolean(node.addTaskListId);
 
   const handleClass = "!w-1.5 !h-1.5 !border-0 !bg-[var(--muted)] !opacity-0";
 
@@ -136,6 +137,18 @@ function MindMapNodeComponent({ data }: NodeProps) {
                   <span className="shrink-0">
                     <CollaborationBadge assigneeCount={assigneeCount} />
                   </span>
+                )}
+                {canAddInline && (
+                  <button
+                    type="button"
+                    data-add-inline
+                    title={node.addTaskParentTaskId ? "Add subtask" : "Add task"}
+                    className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-50/70 text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100/70 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M8 3v10M3 8h10" />
+                    </svg>
+                  </button>
                 )}
               </div>
               {!node.compact && (

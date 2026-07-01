@@ -152,4 +152,11 @@ export interface TaskUpdatePayload {
   name?: string;
   status?: string;
   priority?: number | null;
+  assignees?: { add?: number[]; rem?: number[] };
+}
+
+export interface TaskCreatePayload {
+  name: string;
+  parent?: string;
+  assignees?: number[];
 }
