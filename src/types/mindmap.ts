@@ -10,6 +10,7 @@ export type NodeType =
   | "member";
 
 export interface MindMapAssignee {
+  id: number;
   username: string;
   profilePicture?: string | null;
 }
@@ -35,6 +36,12 @@ export interface MindMapNodeData {
   hasChildren?: boolean;
   /** For loadmore nodes — the list node id to paginate */
   listParentId?: string;
+  /** For addtask nodes — parent node to create under */
+  addTaskParentId?: string;
+  /** For addtask nodes — ClickUp list id for the new task */
+  addTaskListId?: string;
+  /** For addtask nodes — optional parent task id (subtask) */
+  addTaskParentTaskId?: string;
   /** Remaining task count shown on load-more node */
   remainingCount?: number;
   /** Render in compact mode (dense lists) */
@@ -73,4 +80,20 @@ export function makeLoadMoreId(listNodeId: string): string {
 
 export function isTaskType(type: NodeType): boolean {
   return type === "task" || type === "subtask";
+}
+
+/** Scoped list node id for assignee views — avoids colliding with hierarchy lists. */
+export function makeMemberListNodeId(memberUserId: string, listId: string): string {
+  return makeNodeId("list", `m${memberUserId}-${listId}`);
+}
+
+export function isMemberScopedListClickupId(clickupId: string): boolean {
+  return clickupId.startsWith("m") && clickupId.includes("-");
+}
+
+/** Resolve a member-scoped list node id to the real ClickUp list id. */
+export function resolveListClickupId(clickupId: string): string {
+  if (!isMemberScopedListClickupId(clickupId)) return clickupId;
+  const dash = clickupId.indexOf("-");
+  return dash >= 0 ? clickupId.slice(dash + 1) : clickupId;
 }

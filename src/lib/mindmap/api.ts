@@ -1,4 +1,4 @@
-import { parseNodeId, type NodeRecord } from "@/types/mindmap";
+import { parseNodeId, resolveListClickupId, type NodeRecord } from "@/types/mindmap";
 
 export async function fetchWorkspaces(): Promise<NodeRecord[]> {
   const res = await fetch("/api/clickup/workspaces");
@@ -8,6 +8,16 @@ export async function fetchWorkspaces(): Promise<NodeRecord[]> {
   }
   const data = await res.json();
   return data.nodes;
+}
+
+export async function fetchListTaskCount(listId: string): Promise<number> {
+  const res = await fetch(`/api/clickup/lists/${listId}/count`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to count list tasks");
+  }
+  const data = await res.json();
+  return data.count as number;
 }
 
 export async function fetchChildren(
@@ -37,7 +47,7 @@ export async function fetchChildren(
       url = `/api/clickup/folders/${clickupId}/lists`;
       break;
     case "list":
-      url = `/api/clickup/lists/${clickupId}/tasks`;
+      url = `/api/clickup/lists/${resolveListClickupId(clickupId)}/tasks`;
       break;
     default:
       return [];
@@ -55,7 +65,12 @@ export async function fetchChildren(
 
 export async function updateTask(
   taskId: string,
-  payload: { name?: string; status?: string; priority?: number | null },
+  payload: {
+    name?: string;
+    status?: string;
+    priority?: number | null;
+    assignees?: { add?: number[]; rem?: number[] };
+  },
 ) {
   const res = await fetch(`/api/clickup/tasks/${taskId}`, {
     method: "PATCH",
@@ -66,6 +81,37 @@ export async function updateTask(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? "Failed to update task");
+  }
+
+  return res.json();
+}
+
+export async function createTask(
+  listId: string,
+  payload: { name: string; parent?: string; assignees?: number[] },
+) {
+  const res = await fetch(`/api/clickup/lists/${listId}/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to create task");
+  }
+
+  return res.json();
+}
+
+export async function deleteTask(taskId: string) {
+  const res = await fetch(`/api/clickup/tasks/${taskId}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to delete task");
   }
 
   return res.json();
