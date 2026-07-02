@@ -2,6 +2,7 @@ import type { Node, Edge } from "@xyflow/react";
 import type { MindMapNodeData, NodeRecord } from "@/types/mindmap";
 import { isTaskType, makeLoadMoreId } from "@/types/mindmap";
 import { TASK_PAGE_SIZE, type TaskStatusFilter } from "./constants";
+import { computeChildCount } from "./prefetchChildren";
 import { getPathIds, layoutGraph } from "./layout";
 import { matchesStatusFilter } from "./statusFilter";
 
@@ -16,6 +17,21 @@ function getDirectChildren(
     }
   }
   return children.sort((a, b) => a.data.label.localeCompare(b.data.label));
+}
+
+/** Prefer cached counts after load; fall back to prefetched count before expand. */
+function resolveChildCount(
+  id: string,
+  record: NodeRecord,
+  cache: Map<string, NodeRecord>,
+): number | undefined {
+  const { type, childrenLoaded, childCount: stored } = record.data;
+  const cached = computeChildCount(type, getDirectChildren(id, cache));
+
+  if (childrenLoaded) return cached;
+  if (stored != null) return stored;
+  if (cached > 0) return cached;
+  return undefined;
 }
 
 function paginateTaskChildren(
@@ -209,10 +225,11 @@ export function buildVisibleGraph(
       isSelected: id === selectedId,
       isExpanded: expandedIds.has(id),
       isLoading: loadingIds.has(id),
+      childCount: resolveChildCount(id, record, cache),
       addTaskParentId: canAddTask ? id : undefined,
       addTaskListId:
         record.data.type === "list"
-          ? record.data.clickupId
+          ? (record.data.listId as string | undefined) ?? record.data.clickupId
           : isTaskType(record.data.type)
             ? (record.data.listId as string | undefined)
             : undefined,

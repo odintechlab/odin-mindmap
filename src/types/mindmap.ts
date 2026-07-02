@@ -81,3 +81,19 @@ export function makeLoadMoreId(listNodeId: string): string {
 export function isTaskType(type: NodeType): boolean {
   return type === "task" || type === "subtask";
 }
+
+/** Scoped list node id for assignee views — avoids colliding with hierarchy lists. */
+export function makeMemberListNodeId(memberUserId: string, listId: string): string {
+  return makeNodeId("list", `m${memberUserId}-${listId}`);
+}
+
+export function isMemberScopedListClickupId(clickupId: string): boolean {
+  return clickupId.startsWith("m") && clickupId.includes("-");
+}
+
+/** Resolve a member-scoped list node id to the real ClickUp list id. */
+export function resolveListClickupId(clickupId: string): string {
+  if (!isMemberScopedListClickupId(clickupId)) return clickupId;
+  const dash = clickupId.indexOf("-");
+  return dash >= 0 ? clickupId.slice(dash + 1) : clickupId;
+}

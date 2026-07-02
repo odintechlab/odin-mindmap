@@ -1,15 +1,11 @@
 import type { ClickUpTask, ClickUpList, ClickUpFolder, ClickUpSpace, ClickUpTeam, ClickUpMember } from "@/types/clickup";
 import {
   makeNodeId,
+  makeMemberListNodeId,
+  parseNodeId,
   type MindMapNodeData,
   type NodeRecord,
 } from "@/types/mindmap";
-
-function parseCount(count: string | number | null | undefined): number | undefined {
-  if (count == null) return undefined;
-  const n = typeof count === "string" ? parseInt(count, 10) : count;
-  return isNaN(n) ? undefined : n;
-}
 
 function isGenericListName(name: string | null | undefined): boolean {
   const n = (name ?? "").trim().toLowerCase();
@@ -66,7 +62,6 @@ export function spaceToNode(space: ClickUpSpace, parentId: string): NodeRecord {
 
 export function folderToNode(folder: ClickUpFolder, parentId: string): NodeRecord {
   const id = makeNodeId("folder", folder.id);
-  const childCount = parseCount(folder.task_count);
   return {
     id,
     data: {
@@ -76,14 +71,12 @@ export function folderToNode(folder: ClickUpFolder, parentId: string): NodeRecor
       label: folder.name,
       hasChildren: true,
       childrenLoaded: false,
-      childCount,
     },
   };
 }
 
 export function listToNode(list: ClickUpList, parentId: string): NodeRecord {
   const id = makeNodeId("list", list.id);
-  const childCount = parseCount(list.task_count);
   return {
     id,
     data: {
@@ -93,7 +86,6 @@ export function listToNode(list: ClickUpList, parentId: string): NodeRecord {
       label: resolveListLabel(list),
       hasChildren: true,
       childrenLoaded: false,
-      childCount,
       listId: list.id,
     },
   };
@@ -227,8 +219,8 @@ export function tasksToMemberListNodes(
   tasks: ClickUpTask[],
   memberNodeId: string,
 ): NodeRecord[] {
+  const { clickupId: memberUserId } = parseNodeId(memberNodeId);
   // Group tasks by ClickUp list so member scope reads like “Projects → Tasks”.
-  // We create real `list:` node ids; this is safe because the UI resets cache when switching scopes.
   const listById = new Map<string, { id: string; name: string }>();
   for (const t of tasks) {
     if (t.list?.id) {
@@ -239,14 +231,15 @@ export function tasksToMemberListNodes(
   const listNodes: NodeRecord[] = Array.from(listById.values())
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((l) => ({
-      id: makeNodeId("list", l.id),
+      id: makeMemberListNodeId(memberUserId, l.id),
       data: {
         type: "list",
-        clickupId: l.id,
+        clickupId: `m${memberUserId}-${l.id}`,
         parentId: memberNodeId,
         label: l.name,
         hasChildren: true,
         childrenLoaded: true,
+        listId: l.id,
       },
     }));
 
@@ -254,7 +247,7 @@ export function tasksToMemberListNodes(
 
   function listParentFor(task: ClickUpTask): string {
     const listId = task.list?.id;
-    return listId ? makeNodeId("list", listId) : memberNodeId;
+    return listId ? makeMemberListNodeId(memberUserId, listId) : memberNodeId;
   }
 
   function parentNodeId(task: ClickUpTask): string {
@@ -292,7 +285,7 @@ export function tasksToMemberListNodes(
   for (const n of taskNodes) {
     if (n.data.type !== "task") continue;
     const parent = n.data.parentId;
-    if (!parent || !parent.startsWith("list:")) continue;
+    if (!parent || !parent.startsWith("list:m")) continue;
     counts.set(parent, (counts.get(parent) ?? 0) + 1);
   }
 

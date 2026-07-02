@@ -53,11 +53,29 @@ function TeamworkIcon() {
   );
 }
 
-function CollaborationBadge({ assigneeCount }: { assigneeCount: number }) {
+function CollaborationBadge({
+  assigneeCount,
+  compact = false,
+}: {
+  assigneeCount: number;
+  compact?: boolean;
+}) {
+  const title = `Collaboration · ${assigneeCount} people`;
+  if (compact) {
+    return (
+      <span
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[var(--border-strong)] bg-black/[0.03] text-[var(--muted)] dark:bg-white/[0.06]"
+        title={title}
+      >
+        <TeamworkIcon />
+      </span>
+    );
+  }
+
   return (
     <span
       className="inline-flex h-4 items-center gap-1 rounded-full border border-[var(--border-strong)] bg-black/[0.03] px-1.5 text-[9px] font-semibold tracking-wide text-[var(--muted)] dark:bg-white/[0.06]"
-      title={`Collaboration · ${assigneeCount} people`}
+      title={title}
     >
       <TeamworkIcon />
       <span className="truncate">Collaboration</span>
@@ -72,7 +90,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
   const isLoadMore = node.type === "loadmore";
   const accent = isLoadMore ? "#6366f1" : (TYPE_COLORS[node.type] ?? "#6366f1");
   const due = formatDueDate(node.dueDate);
-  const width = node.compact ? "w-[200px]" : "w-[220px]";
+  const width = "w-[220px]";
   const assigneeCount = node.assignees?.length ?? 0;
   const isCollab = isTask && assigneeCount > 1;
   const canAddInline = Boolean(node.addTaskListId);
@@ -129,21 +147,23 @@ function MindMapNodeComponent({ data }: NodeProps) {
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <p className={`min-w-0 flex-1 truncate font-semibold leading-tight text-zinc-900 dark:text-zinc-50 ${node.compact ? "text-xs" : "text-sm"}`}>
+              <div className="flex min-w-0 items-start gap-1">
+                <p
+                  title={node.label}
+                  className={`min-w-0 flex-1 font-semibold leading-snug text-zinc-900 dark:text-zinc-50 ${
+                    node.compact
+                      ? "line-clamp-2 text-xs"
+                      : "line-clamp-2 text-sm"
+                  }`}
+                >
                   {node.label}
                 </p>
-                {isCollab && (
-                  <span className="shrink-0">
-                    <CollaborationBadge assigneeCount={assigneeCount} />
-                  </span>
-                )}
                 {canAddInline && (
                   <button
                     type="button"
                     data-add-inline
                     title={node.addTaskParentTaskId ? "Add subtask" : "Add task"}
-                    className="ml-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-50/70 text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100/70 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-emerald-400/40 bg-emerald-50/70 text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100/70 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <path d="M8 3v10M3 8h10" />
@@ -151,7 +171,25 @@ function MindMapNodeComponent({ data }: NodeProps) {
                   </button>
                 )}
               </div>
-              {!node.compact && (
+              {node.compact ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  {isTask && node.status && (
+                    <span
+                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ring-1 ring-black/10"
+                      style={{ backgroundColor: node.status.color }}
+                      title={node.status.name}
+                    />
+                  )}
+                  {node.childCount != null && (
+                    <span className="text-[9px] font-medium text-[var(--muted)]">
+                      {node.childCount}
+                    </span>
+                  )}
+                  {isCollab && (
+                    <CollaborationBadge assigneeCount={assigneeCount} compact />
+                  )}
+                </div>
+              ) : (
                 <div className="mt-1 flex items-center gap-1.5">
                   <span
                     className="inline-flex rounded px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white"
@@ -159,10 +197,13 @@ function MindMapNodeComponent({ data }: NodeProps) {
                   >
                     {node.type}
                   </span>
-                  {node.childCount != null && !node.childrenLoaded && (
+                  {node.childCount != null && (
                     <span className="text-[10px] font-medium text-[var(--muted)]">
-                      {node.childCount} items
+                      {node.childCount} {node.childCount === 1 ? "item" : "items"}
                     </span>
+                  )}
+                  {isCollab && (
+                    <CollaborationBadge assigneeCount={assigneeCount} />
                   )}
                 </div>
               )}
@@ -199,15 +240,6 @@ function MindMapNodeComponent({ data }: NodeProps) {
             </div>
           )}
 
-          {isTask && node.compact && node.status && (
-            <div className="mt-1">
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full ring-1 ring-black/10"
-                style={{ backgroundColor: node.status.color }}
-                title={node.status.name}
-              />
-            </div>
-          )}
         </div>
       </div>
       <Handle type="source" position={Position.Right} className={handleClass} />

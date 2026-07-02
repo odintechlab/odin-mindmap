@@ -18,17 +18,24 @@ import { CreateTaskDialog } from "./CreateTaskDialog";
 import { buildVisibleGraph, getBreadcrumb } from "@/lib/mindmap/buildGraph";
 import { getAncestorIds, getSubtreeNodeIds } from "@/lib/mindmap/layout";
 import { TASK_PAGE_SIZE, type TaskStatusFilter } from "@/lib/mindmap/constants";
-import { fetchWorkspaces, fetchChildren, createTask, deleteTask } from "@/lib/mindmap/api";
+import { fetchWorkspaces, fetchChildren, fetchListTaskCount, createTask, deleteTask } from "@/lib/mindmap/api";
+import {
+  applyPrefetchedCount,
+  mergePrefetchedChildren,
+  nodesNeedingPrefetch,
+  PREFETCHABLE_TYPES,
+} from "@/lib/mindmap/prefetchChildren";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { usePersistedWorkspace } from "@/hooks/usePersistedWorkspace";
 import { useAdminUnlocked } from "@/hooks/useAdminUnlocked";
-import { makeNodeId, parseNodeId, isTaskType, type MindMapNodeData, type NodeRecord } from "@/types/mindmap";
+import { makeNodeId, parseNodeId, resolveListClickupId, isTaskType, type MindMapNodeData, type NodeRecord } from "@/types/mindmap";
 import { matchesStatusFilter } from "@/lib/mindmap/statusFilter";
 
 const nodeTypes = { mindmap: MindMapNode };
 
 const LARGE_LIST_THRESHOLD = 200;
 const SCOPE_KEY = "odin_scope";
+const PREFETCH_CONCURRENCY = 4;
 
 function cloneSet<T>(set: Set<T>): Set<T> {
   return new Set(set);
@@ -77,6 +84,129 @@ function MindMapCanvasInner() {
   const focusAfterLayoutRef = useRef<{ nodeId: string; mode: "subtree" | "self" } | null>(null);
   const cacheRef = useRef(cache);
   cacheRef.current = cache;
+  const prefetchInFlightRef = useRef(new Set<string>());
+  const prefetchQueueRef = useRef<string[]>([]);
+  const prefetchActiveRef = useRef(0);
+  const prefetchPromisesRef = useRef(new Map<string, Promise<void>>());
+  const graphGenRef = useRef(0);
+  const expandedIdsRef = useRef(expandedIds);
+  expandedIdsRef.current = expandedIds;
+
+  const confirmLargeListLoad = useCallback((count: number) => {
+    return window.confirm(
+      `This list has ${count} tasks. Loading may take a moment. Continue?`,
+    );
+  }, []);
+
+  const drainPrefetchQueue = useCallback(() => {
+    const runOne = async (nodeId: string) => {
+      const gen = graphGenRef.current;
+      const record = cacheRef.current.get(nodeId);
+      if (!record || record.data.childrenLoaded) return;
+
+      const { type, clickupId } = parseNodeId(nodeId);
+      if (!PREFETCHABLE_TYPES.has(type)) return;
+
+      // Lists: count first; only full-load small lists in the background.
+      if (type === "list") {
+        const listId = resolveListClickupId(clickupId);
+        const count = await fetchListTaskCount(listId);
+        if (gen !== graphGenRef.current) return;
+
+        setCache((prev) => {
+          if (gen !== graphGenRef.current) return prev;
+          return applyPrefetchedCount(prev, nodeId, count);
+        });
+
+        if (count > LARGE_LIST_THRESHOLD) return;
+
+        const children = await fetchChildren(nodeId);
+        if (gen !== graphGenRef.current) return;
+
+        setCache((prev) => {
+          if (gen !== graphGenRef.current) return prev;
+          const current = prev.get(nodeId);
+          if (!current || current.data.childrenLoaded) return prev;
+          return mergePrefetchedChildren(prev, nodeId, children);
+        });
+
+        if (gen !== graphGenRef.current) return;
+
+        setTaskVisibleLimits((prev) => {
+          const next = new Map(prev);
+          if (!next.has(nodeId)) next.set(nodeId, TASK_PAGE_SIZE);
+          return next;
+        });
+        return;
+      }
+
+      const workspaceId = record.data.workspaceId as string | undefined;
+      const children = await fetchChildren(
+        nodeId,
+        type === "member" ? { workspaceId } : undefined,
+      );
+
+      if (gen !== graphGenRef.current) return;
+
+      setCache((prev) => {
+        if (gen !== graphGenRef.current) return prev;
+        const current = prev.get(nodeId);
+        if (!current || current.data.childrenLoaded) return prev;
+        return mergePrefetchedChildren(prev, nodeId, children);
+      });
+
+      if (gen !== graphGenRef.current) return;
+
+      if (type === "member") {
+        setTaskVisibleLimits((prev) => {
+          const next = new Map(prev);
+          if (!next.has(nodeId)) next.set(nodeId, TASK_PAGE_SIZE);
+          return next;
+        });
+      }
+    };
+
+    while (
+      prefetchActiveRef.current < PREFETCH_CONCURRENCY &&
+      prefetchQueueRef.current.length > 0
+    ) {
+      const nodeId = prefetchQueueRef.current.shift()!;
+      if (prefetchInFlightRef.current.has(nodeId)) continue;
+
+      const record = cacheRef.current.get(nodeId);
+      if (!record || record.data.childrenLoaded) continue;
+
+      prefetchInFlightRef.current.add(nodeId);
+      prefetchActiveRef.current++;
+
+      const promise = runOne(nodeId)
+        .catch(() => {
+          // Allow retry on the next cache scan.
+        })
+        .finally(() => {
+          prefetchInFlightRef.current.delete(nodeId);
+          prefetchPromisesRef.current.delete(nodeId);
+          prefetchActiveRef.current--;
+          drainPrefetchQueue();
+        });
+
+      prefetchPromisesRef.current.set(nodeId, promise);
+    }
+  }, []);
+
+  const schedulePrefetch = useCallback(() => {
+    const pending = nodesNeedingPrefetch(
+      cacheRef.current,
+      prefetchInFlightRef.current,
+      expandedIdsRef.current,
+    );
+    for (const id of pending) {
+      if (!prefetchQueueRef.current.includes(id)) {
+        prefetchQueueRef.current.push(id);
+      }
+    }
+    drainPrefetchQueue();
+  }, [drainPrefetchQueue]);
 
   const handleTeamChange = useCallback(
     (teamId: string) => {
@@ -183,6 +313,7 @@ function MindMapCanvasInner() {
   }, [statusFilter, selectedId, viewCache]);
 
   const resetGraph = useCallback(() => {
+    graphGenRef.current += 1;
     setCache(new Map());
     setExpandedIds(new Set());
     setLoadingIds(new Set());
@@ -191,7 +322,16 @@ function MindMapCanvasInner() {
     setError(null);
     fitOnNextLayout.current = false;
     focusAfterLayoutRef.current = null;
+    prefetchInFlightRef.current = new Set();
+    prefetchQueueRef.current = [];
+    prefetchActiveRef.current = 0;
+    prefetchPromisesRef.current = new Map();
   }, []);
+
+  // Silently prefetch children so counts are accurate before the user expands a node.
+  useEffect(() => {
+    schedulePrefetch();
+  }, [cache, expandedIds, schedulePrefetch]);
 
   // Initial load / scope load
   useEffect(() => {
@@ -322,16 +462,7 @@ function MindMapCanvasInner() {
             const memberChildren = await fetchChildren(memberId, { workspaceId: scope.teamId });
             if (cancelled) return;
             setCache((prev) => {
-              const next = new Map(prev);
-              const parent = next.get(memberId);
-              if (parent) {
-                const taskCount = memberChildren.filter((c) => c.data.type === "task").length;
-                next.set(memberId, {
-                  ...parent,
-                  data: { ...parent.data, childrenLoaded: true, childCount: taskCount },
-                });
-              }
-              for (const child of memberChildren) next.set(child.id, child);
+              const next = mergePrefetchedChildren(prev, memberId, memberChildren);
               return next;
             });
 
@@ -364,33 +495,37 @@ function MindMapCanvasInner() {
     return () => {
       cancelled = true;
     };
-  }, [scope, adminUnlocked, activeTeamId, wsLoading, resetGraph]);
+  }, [scope, activeTeamId, wsLoading, resetGraph]);
 
   // Auto fit / recenter after layout changes
   useEffect(() => {
     if (nodes.length === 0) return;
 
     requestAnimationFrame(() => {
+      const nodeIdSet = new Set(nodes.map((n) => n.id));
+
+      const fitToIds = (ids: string[], padding: number, maxZoom?: number) => {
+        const visible = ids.filter((id) => nodeIdSet.has(id));
+        if (visible.length === 0) {
+          fitView({ padding: 0.2, duration: 300 });
+          return;
+        }
+        fitView({
+          nodes: visible.map((id) => ({ id })),
+          padding,
+          duration: 400,
+          ...(maxZoom != null ? { maxZoom } : {}),
+        });
+      };
+
       if (focusAfterLayoutRef.current) {
         const { nodeId, mode } = focusAfterLayoutRef.current;
         focusAfterLayoutRef.current = null;
 
         if (mode === "subtree") {
-          const ids = getSubtreeNodeIds(nodeId, nodes, edges);
-          fitView({
-            nodes: ids.map((id) => ({ id })),
-            padding: 0.3,
-            duration: 400,
-            maxZoom: 1.1,
-          });
+          fitToIds(getSubtreeNodeIds(nodeId, nodes, edges), 0.3, 1.1);
         } else {
-          const ids = getAncestorIds(nodeId, cacheRef.current);
-          fitView({
-            nodes: ids.map((id) => ({ id })),
-            padding: 0.35,
-            duration: 400,
-            maxZoom: 1.2,
-          });
+          fitToIds(getAncestorIds(nodeId, cacheRef.current), 0.35, 1.2);
         }
       } else if (fitOnNextLayout.current) {
         fitOnNextLayout.current = false;
@@ -413,17 +548,37 @@ function MindMapCanvasInner() {
 
     if (!shouldLoad) return true;
 
-    const { type } = parseNodeId(nodeId);
+    const { type, clickupId } = parseNodeId(nodeId);
 
-    if (
-      type === "list" &&
-      childCount != null &&
-      childCount > LARGE_LIST_THRESHOLD
-    ) {
-      const confirmed = window.confirm(
-        `This list has ${childCount} tasks. Loading may take a moment. Continue?`,
-      );
-      if (!confirmed) return false;
+    const inFlight = prefetchPromisesRef.current.get(nodeId);
+    if (inFlight) {
+      setLoadingIds((prev) => cloneSet(prev).add(nodeId));
+      try {
+        await inFlight;
+      } finally {
+        setLoadingIds((prev) => {
+          const next = cloneSet(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      }
+      if (cacheRef.current.get(nodeId)?.data.childrenLoaded === true) return true;
+      childCount = cacheRef.current.get(nodeId)?.data.childCount;
+    }
+
+    if (type === "list") {
+      if (childCount == null) {
+        try {
+          childCount = await fetchListTaskCount(resolveListClickupId(clickupId));
+          setCache((prev) => applyPrefetchedCount(prev, nodeId, childCount!));
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to count list tasks");
+          return false;
+        }
+      }
+      if (childCount > LARGE_LIST_THRESHOLD && !confirmLargeListLoad(childCount)) {
+        return false;
+      }
     }
 
     setLoadingIds((prev) => cloneSet(prev).add(nodeId));
@@ -437,25 +592,9 @@ function MindMapCanvasInner() {
       );
 
       setCache((prev) => {
-        const next = new Map(prev);
-        const parent = next.get(nodeId);
-        if (parent) {
-          const taskCount = children.filter((c) => c.data.type === "task").length;
-          next.set(nodeId, {
-            ...parent,
-            data: {
-              ...parent.data,
-              childrenLoaded: true,
-              childCount: type === "member" ? taskCount : parent.data.childCount,
-            },
-          });
-        }
-        for (const child of children) {
-          if (!next.has(child.id)) {
-            next.set(child.id, child);
-          }
-        }
-        return next;
+        const current = prev.get(nodeId);
+        if (!current || current.data.childrenLoaded) return prev;
+        return mergePrefetchedChildren(prev, nodeId, children);
       });
 
       if (type === "list" || type === "member") {
@@ -477,7 +616,7 @@ function MindMapCanvasInner() {
         return next;
       });
     }
-  }, []);
+  }, [confirmLargeListLoad]);
 
   const loadMoreTasks = useCallback((listNodeId: string) => {
     setTaskVisibleLimits((prev) => {
@@ -602,7 +741,7 @@ function MindMapCanvasInner() {
         id: created.id,
         data: {
           ...created.data,
-          parentId: created.data.parentId ?? parentNodeId,
+          parentId: parentNodeId,
         },
       };
 
@@ -696,7 +835,7 @@ function MindMapCanvasInner() {
         id: created.id,
         data: {
           ...created.data,
-          parentId: created.data.parentId ?? parentNodeId,
+          parentId: parentNodeId,
         },
       };
 
@@ -770,11 +909,10 @@ function MindMapCanvasInner() {
               nodeTypes={nodeTypes}
               onNodeClick={onNodeClick}
               onNodeDoubleClick={onNodeDoubleClick}
-              fitView
               minZoom={0.05}
               maxZoom={2}
               proOptions={{ hideAttribution: true }}
-              onlyRenderVisibleElements
+              onlyRenderVisibleElements={nodes.length > 0}
               nodesDraggable={false}
               nodesConnectable={false}
               elementsSelectable

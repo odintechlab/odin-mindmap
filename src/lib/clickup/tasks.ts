@@ -9,6 +9,25 @@ import type {
 const TASK_QUERY =
   "subtasks=true&include_closed=true&include_markdown_description=false";
 
+/** Count top-level tasks in a list (excludes subtasks). Paginates through all pages. */
+export async function countTopLevelTasksInList(listId: string): Promise<number> {
+  let count = 0;
+  let page = 0;
+
+  while (true) {
+    const data = await clickup<ClickUpTasksResponse>(
+      `/list/${listId}/task?${TASK_QUERY}&page=${page}`,
+    );
+    for (const task of data.tasks) {
+      if (!task.parent) count++;
+    }
+    if (data.last_page) break;
+    page++;
+  }
+
+  return count;
+}
+
 export async function getTasksInList(listId: string): Promise<ClickUpTask[]> {
   const tasks: ClickUpTask[] = [];
   let page = 0;

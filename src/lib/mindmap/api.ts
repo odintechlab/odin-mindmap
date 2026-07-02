@@ -1,4 +1,4 @@
-import { parseNodeId, type NodeRecord } from "@/types/mindmap";
+import { parseNodeId, resolveListClickupId, type NodeRecord } from "@/types/mindmap";
 
 export async function fetchWorkspaces(): Promise<NodeRecord[]> {
   const res = await fetch("/api/clickup/workspaces");
@@ -8,6 +8,16 @@ export async function fetchWorkspaces(): Promise<NodeRecord[]> {
   }
   const data = await res.json();
   return data.nodes;
+}
+
+export async function fetchListTaskCount(listId: string): Promise<number> {
+  const res = await fetch(`/api/clickup/lists/${listId}/count`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to count list tasks");
+  }
+  const data = await res.json();
+  return data.count as number;
 }
 
 export async function fetchChildren(
@@ -37,7 +47,7 @@ export async function fetchChildren(
       url = `/api/clickup/folders/${clickupId}/lists`;
       break;
     case "list":
-      url = `/api/clickup/lists/${clickupId}/tasks`;
+      url = `/api/clickup/lists/${resolveListClickupId(clickupId)}/tasks`;
       break;
     default:
       return [];
