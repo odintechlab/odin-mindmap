@@ -2,6 +2,7 @@ import { clickup } from "./client";
 import type {
   ClickUpTask,
   ClickUpTasksResponse,
+  TaskCreatePayload,
   TaskUpdatePayload,
 } from "@/types/clickup";
 
@@ -66,4 +67,15 @@ export async function updateTask(taskId: string, payload: TaskUpdatePayload) {
     method: "PUT",
     body: JSON.stringify(payload),
   });
+}
+
+export async function createTask(listId: string, payload: TaskCreatePayload) {
+  return clickup<ClickUpTask>(`/list/${listId}/task`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteTask(taskId: string) {
+  await clickup<void>(`/task/${taskId}`, { method: "DELETE" });
 }
