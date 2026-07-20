@@ -1,22 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { Badge } from "@/components/ui/Badge";
-import { formatDate } from "@/lib/dashboard/api";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTimelineViewport } from "@/hooks/useTimelineViewport";
+import { formatPeriodLabel } from "@/lib/timeline/dateTicks";
+import { laneCount, packLanesByGroup } from "@/lib/timeline/lanePacking";
+import {
+  DAY_MS,
+  FALLBACK_CONTAINER_WIDTH,
+  LABEL_GUTTER_WIDTH,
+  OVERSCAN_RATIO,
+  PRESET_VISIBLE_DAYS,
+  ROW_HEIGHT,
+  ZOOM_BUTTON_FACTOR,
+} from "@/lib/timeline/constants";
+import { clamp, presetToPxPerDay } from "@/lib/timeline/viewport";
+import { TimelineDetailPanel } from "./TimelineDetailPanel";
+import { TimelineGrid } from "./TimelineGrid";
+import { TimelineHeader } from "./TimelineHeader";
+import { TimelineMinimap } from "./TimelineMinimap";
+import { TimelineRowGroup } from "./TimelineRowGroup";
+import { TimelineToolbar } from "./TimelineToolbar";
 import type { TimelineBar, TimelineStats } from "@/types/timeline";
 
-const ROW_HEIGHT = 36;
-const LABEL_WIDTH = 160;
-const DAY_MS = 86_400_000;
-const AXIS_HEIGHT = 34;
-
-function formatDay(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
+type PackedBar = TimelineBar & { lane: number };
 
 interface TimelineCanvasProps {
   stats: TimelineStats;
@@ -24,25 +30,92 @@ interface TimelineCanvasProps {
 
 export function TimelineCanvas({ stats }: TimelineCanvasProps) {
   const [selected, setSelected] = useState<TimelineBar | null>(null);
-  const span = stats.rangeEnd - stats.rangeStart || DAY_MS;
-  const chartWidth = Math.max(840, Math.ceil(span / DAY_MS) * 12);
 
-  const rows = new Map<string, TimelineBar[]>();
-  for (const bar of stats.bars) {
-    const bucket = rows.get(bar.rowLabel) ?? [];
-    bucket.push(bar);
-    rows.set(bar.rowLabel, bucket);
-  }
+  // The shared tab-page chrome sizes its content area via `min-height`
+  // rather than `height`, which (per the flexbox spec's definite-size
+  // rules) makes percentage heights like `h-full` fail to resolve for
+  // deeply-nested flex descendants — this component's height would
+  // silently collapse to its content size instead of filling the page.
+  // Measuring and setting an explicit pixel height sidesteps that
+  // entirely without touching the shared layout used by other tabs.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [fillHeightPx, setFillHeightPx] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    function recompute() {
+      if (!rootRef.current) return;
+      const top = rootRef.current.getBoundingClientRect().top;
+      setFillHeightPx(Math.max(window.innerHeight - top, 0));
+    }
+    recompute();
+    window.addEventListener("resize", recompute);
+    return () => window.removeEventListener("resize", recompute);
+  }, []);
 
-  const rowLabels = [...rows.keys()].sort((a, b) => a.localeCompare(b));
+  const initialPxPerDay = useMemo(() => presetToPxPerDay("month", FALLBACK_CONTAINER_WIDTH), []);
+  // Seeded once on mount from the data extent, and deliberately not
+  // re-derived from `stats` on later filter changes, so the user's current
+  // pan/zoom position survives filter/groupBy changes.
+  const [initialViewStartMs] = useState(() => {
+    const centerMs = clamp(Date.now(), stats.rangeStart, stats.rangeEnd);
+    return centerMs - (PRESET_VISIBLE_DAYS.month / 2) * DAY_MS;
+  });
+
+  const viewport = useTimelineViewport({ initialViewStartMs, initialPxPerDay });
+
+  const packedByGroup = useMemo(
+    () => packLanesByGroup(stats.bars, (bar) => bar.rowLabel),
+    [stats.bars],
+  );
+
+  const rowLabels = useMemo(
+    () => [...packedByGroup.keys()].sort((a, b) => a.localeCompare(b)),
+    [packedByGroup],
+  );
+
+  const rowLayout = useMemo(() => {
+    let offset = 0;
+    return rowLabels.map((label) => {
+      const bars = packedByGroup.get(label) ?? [];
+      const height = Math.max(laneCount(bars), 1) * ROW_HEIGHT;
+      const top = offset;
+      offset += height;
+      return { label, top, height };
+    });
+  }, [rowLabels, packedByGroup]);
+
+  const totalBodyHeight = rowLayout.length
+    ? rowLayout[rowLayout.length - 1].top + rowLayout[rowLayout.length - 1].height
+    : 0;
+
+  const visibleBarsByGroup = useMemo(() => {
+    const overscanMs = (viewport.viewEndMs - viewport.viewStartMs) * OVERSCAN_RATIO;
+    const lo = viewport.viewStartMs - overscanMs;
+    const hi = viewport.viewEndMs + overscanMs;
+    const result = new Map<string, PackedBar[]>();
+    for (const [label, bars] of packedByGroup) {
+      result.set(
+        label,
+        bars.filter((b) => b.endMs >= lo && b.startMs <= hi),
+      );
+    }
+    return result;
+  }, [packedByGroup, viewport.viewStartMs, viewport.viewEndMs]);
+
+  const dataExtentStart = Math.min(stats.rangeStart, viewport.viewStartMs);
+  const dataExtentEnd = Math.max(stats.rangeEnd, viewport.viewEndMs);
+
+  const periodLabel = formatPeriodLabel(viewport.viewStartMs, viewport.viewEndMs, viewport.lodTier);
+  const subtitle = `${stats.bars.length} task${stats.bars.length === 1 ? "" : "s"} · grouped by ${stats.groupBy}`;
 
   if (stats.bars.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-6">
+      <div
+        ref={rootRef}
+        className="flex flex-col items-center justify-center p-6"
+        style={{ height: fillHeightPx ?? undefined }}
+      >
         <div className="glass-strong max-w-md rounded-2xl border border-[var(--border)] p-8 text-center shadow-surface">
-          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
-            No tasks with start or due dates
-          </p>
+          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">No tasks with start or due dates</p>
           <p className="mt-2 text-xs text-[var(--muted)]">
             Add start_date or due_date on tasks in ClickUp to see them on the timeline.
           </p>
@@ -51,229 +124,90 @@ export function TimelineCanvas({ stats }: TimelineCanvasProps) {
     );
   }
 
-  const toX = (ms: number) =>
-    LABEL_WIDTH + ((ms - stats.rangeStart) / span) * chartWidth;
-
-  const now = Date.now();
-  const todayX =
-    now >= stats.rangeStart && now <= stats.rangeEnd ? toX(now) : null;
-  const rangeLabel = `${formatDate(String(stats.rangeStart))} → ${formatDate(String(stats.rangeEnd))}`;
-
   return (
-    <div className="flex h-full min-h-0">
-      <div className="min-w-0 flex-1 overflow-auto p-4">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">Timeline</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              {stats.bars.length} task{stats.bars.length === 1 ? "" : "s"} · grouped by {stats.groupBy}
-            </p>
+    <div ref={rootRef} className="flex min-h-0" style={{ height: fillHeightPx ?? undefined }}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <TimelineToolbar
+          periodLabel={periodLabel}
+          subtitle={subtitle}
+          activePreset={viewport.activePreset}
+          onPreset={viewport.setPreset}
+          onZoomIn={() => viewport.zoomBy(ZOOM_BUTTON_FACTOR)}
+          onZoomOut={() => viewport.zoomBy(1 / ZOOM_BUTTON_FACTOR)}
+          onPrev={viewport.goToPrev}
+          onNext={viewport.goToNext}
+          onToday={viewport.goToToday}
+        />
+
+        <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="glass-solid sticky top-0 z-20 flex border-b border-[var(--border-strong)]">
+            <div className="shrink-0 border-r border-[var(--border)]" style={{ width: LABEL_GUTTER_WIDTH }} />
+            <div className="relative min-w-0 flex-1 overflow-hidden">
+              <TimelineHeader
+                viewStartMs={viewport.viewStartMs}
+                viewEndMs={viewport.viewEndMs}
+                pxPerDay={viewport.pxPerDay}
+                lodTier={viewport.lodTier}
+              />
+            </div>
           </div>
-          <div className="glass-solid rounded-xl border border-[var(--border-strong)] px-3 py-2 text-xs text-[var(--muted)]">
-            <span className="font-semibold text-zinc-700 dark:text-zinc-200">Range</span>
-            <span className="ml-2 tabular-nums">{rangeLabel}</span>
-          </div>
-        </div>
 
-        <div className="glass-strong overflow-x-auto rounded-2xl border border-[var(--border)] shadow-surface">
-          <svg
-            width={LABEL_WIDTH + chartWidth + 24}
-            height={AXIS_HEIGHT + rowLabels.length * ROW_HEIGHT + 30}
-            className="block"
-          >
-            {/* Axis + grid */}
-            {Array.from({ length: 7 }).map((_, i) => {
-              const t = stats.rangeStart + (span * i) / 6;
-              const x = toX(t);
-              return (
-                <g key={i}>
-                  <line
-                    x1={x}
-                    y1={0}
-                    x2={x}
-                    y2={AXIS_HEIGHT + rowLabels.length * ROW_HEIGHT + 14}
-                    stroke="var(--border)"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={x}
-                    y={AXIS_HEIGHT - 12}
-                    textAnchor="middle"
-                    className="fill-[var(--muted)] text-[10px]"
-                  >
-                    {formatDay(t)}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* Left gutter divider */}
-            <line
-              x1={LABEL_WIDTH - 6}
-              y1={0}
-              x2={LABEL_WIDTH - 6}
-              y2={AXIS_HEIGHT + rowLabels.length * ROW_HEIGHT + 14}
-              stroke="var(--border-strong)"
-              strokeWidth={1}
-            />
-
-            {/* Today marker */}
-            {todayX !== null && (
-              <g>
-                <line
-                  x1={todayX}
-                  y1={0}
-                  x2={todayX}
-                  y2={AXIS_HEIGHT + rowLabels.length * ROW_HEIGHT + 14}
-                  stroke="#f97316"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  opacity={0.9}
-                />
-                <text
-                  x={todayX + 6}
-                  y={12}
-                  className="fill-orange-600 text-[10px] font-semibold dark:fill-orange-300"
+          <div className="relative flex" style={{ minHeight: totalBodyHeight }}>
+            <div
+              className="relative shrink-0 border-r border-[var(--border)]"
+              style={{ width: LABEL_GUTTER_WIDTH, height: totalBodyHeight }}
+            >
+              {rowLayout.map(({ label, top, height }) => (
+                <div
+                  key={label}
+                  className="glass-solid absolute flex items-center border-b border-[var(--border)] px-3 text-xs font-semibold text-zinc-700 dark:text-zinc-200"
+                  style={{ top, height, left: 0, right: 0 }}
+                  title={label}
                 >
-                  Today
-                </text>
-              </g>
-            )}
+                  <span className="truncate">{label}</span>
+                </div>
+              ))}
+            </div>
 
-            {rowLabels.map((label, rowIndex) => {
-              const y = AXIS_HEIGHT + rowIndex * ROW_HEIGHT + 8;
-              const stripe = rowIndex % 2 === 0;
-              return (
-                <g key={label}>
-                  {/* Row stripe */}
-                  <rect
-                    x={0}
-                    y={AXIS_HEIGHT + rowIndex * ROW_HEIGHT}
-                    width={LABEL_WIDTH + chartWidth + 24}
-                    height={ROW_HEIGHT}
-                    fill={stripe ? "rgba(99, 102, 241, 0.03)" : "transparent"}
-                    opacity={0.9}
-                  />
-
-                  <text
-                    x={8}
-                    y={y + 14}
-                    className="fill-zinc-700 text-[11px] font-medium dark:fill-zinc-300"
-                  >
-                    {label.length > 20 ? `${label.slice(0, 18)}…` : label}
-                  </text>
-
-                  {/* Row divider */}
-                  <line
-                    x1={0}
-                    y1={AXIS_HEIGHT + (rowIndex + 1) * ROW_HEIGHT}
-                    x2={LABEL_WIDTH + chartWidth + 24}
-                    y2={AXIS_HEIGHT + (rowIndex + 1) * ROW_HEIGHT}
-                    stroke="var(--border)"
-                    strokeWidth={1}
-                    opacity={0.7}
-                  />
-
-                  {(rows.get(label) ?? []).map((bar) => {
-                    const x1 = toX(bar.startMs);
-                    const x2 = toX(bar.endMs);
-                    const w = Math.max(x2 - x1, 4);
-                    const isSelected = selected?.task.id === bar.task.id;
-                    const fill = bar.task.status.color || "#818cf8";
-                    const showText = w >= 90;
-                    const textX = x1 + clamp(w / 2, 22, w - 22);
-                    return (
-                      <g
-                        key={bar.task.id}
-                        className="cursor-pointer"
-                        onClick={() => setSelected(bar)}
-                      >
-                        <rect
-                          x={x1}
-                          y={y}
-                          width={w}
-                          height={20}
-                          rx={6}
-                          fill={fill}
-                          opacity={isSelected ? 0.95 : 0.85}
-                          stroke={isSelected ? "white" : "transparent"}
-                          strokeWidth={isSelected ? 1.5 : 0}
-                        >
-                          <title>{bar.task.name}</title>
-                        </rect>
-                        {showText && (
-                          <text
-                            x={textX}
-                            y={y + 14}
-                            textAnchor="middle"
-                            className="select-none fill-white text-[10px] font-semibold"
-                            opacity={0.92}
-                          >
-                            {bar.task.name.length > 22 ? `${bar.task.name.slice(0, 20)}…` : bar.task.name}
-                          </text>
-                        )}
-                      </g>
-                    );
-                  })}
-                </g>
-              );
-            })}
-          </svg>
+            <div
+              ref={viewport.containerRef}
+              className={`relative min-w-0 flex-1 overflow-hidden ${viewport.isPanning ? "cursor-grabbing" : "cursor-grab"}`}
+              style={{ height: totalBodyHeight, touchAction: "pan-y" }}
+            >
+              <TimelineGrid
+                viewStartMs={viewport.viewStartMs}
+                viewEndMs={viewport.viewEndMs}
+                pxPerDay={viewport.pxPerDay}
+                lodTier={viewport.lodTier}
+                heightPx={totalBodyHeight}
+              />
+              {rowLayout.map(({ label, top, height }) => (
+                <TimelineRowGroup
+                  key={label}
+                  topOffsetPx={top}
+                  heightPx={height}
+                  visibleBars={visibleBarsByGroup.get(label) ?? []}
+                  viewStartMs={viewport.viewStartMs}
+                  pxPerDay={viewport.pxPerDay}
+                  selectedTaskId={selected?.task.id ?? null}
+                  onSelectBar={setSelected}
+                />
+              ))}
+            </div>
+          </div>
         </div>
+
+        <TimelineMinimap
+          bars={stats.bars}
+          extentStartMs={dataExtentStart}
+          extentEndMs={dataExtentEnd}
+          viewStartMs={viewport.viewStartMs}
+          viewEndMs={viewport.viewEndMs}
+          onPan={viewport.panTo}
+        />
       </div>
 
-      {selected && (
-        <aside className="glass-strong w-80 shrink-0 overflow-y-auto border-l border-[var(--border)] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-              {selected.task.name}
-            </h3>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:bg-[var(--panel-solid)] hover:text-zinc-800 dark:hover:text-zinc-100"
-              title="Close"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Badge label={selected.task.status.label} color={selected.task.status.color} />
-            {selected.task.listName && (
-              <span className="rounded-lg border border-[var(--border)] bg-[var(--panel-solid)] px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)]">
-                {selected.task.listName}
-              </span>
-            )}
-          </div>
-
-          <div className="mt-4 glass-inset rounded-2xl border border-[var(--border-strong)] p-4">
-            <dl className="grid grid-cols-2 gap-3 text-xs">
-              <div>
-                <dt className="text-[var(--muted)]">Start</dt>
-                <dd className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
-                  {formatDate(String(selected.startMs))}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-[var(--muted)]">End</dt>
-                <dd className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-200">
-                  {selected.task.dueDate ? formatDate(selected.task.dueDate) : formatDate(String(selected.endMs))}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          <a
-            href={selected.task.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-[var(--border-strong)] bg-[var(--panel-solid)] px-3 py-2 text-xs font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-          >
-            Open in ClickUp <span aria-hidden>→</span>
-          </a>
-        </aside>
-      )}
+      <TimelineDetailPanel bar={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
