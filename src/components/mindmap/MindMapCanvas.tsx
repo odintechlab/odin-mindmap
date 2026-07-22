@@ -19,6 +19,7 @@ import { buildVisibleGraph, getBreadcrumb } from "@/lib/mindmap/buildGraph";
 import { getAncestorIds, getSubtreeNodeIds } from "@/lib/mindmap/layout";
 import { TASK_PAGE_SIZE, type TaskStatusFilter } from "@/lib/mindmap/constants";
 import { fetchWorkspaces, fetchChildren, createTask, deleteTask } from "@/lib/mindmap/api";
+import { mapWithConcurrency } from "@/lib/utils/concurrency";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { usePersistedWorkspace } from "@/hooks/usePersistedWorkspace";
 import { useAdminUnlocked } from "@/hooks/useAdminUnlocked";
@@ -77,6 +78,7 @@ function MindMapCanvasInner() {
   const focusAfterLayoutRef = useRef<{ nodeId: string; mode: "subtree" | "self" } | null>(null);
   const cacheRef = useRef(cache);
   cacheRef.current = cache;
+  const countResolveInflight = useRef(new Set<string>());
 
   const handleTeamChange = useCallback(
     (teamId: string) => {
@@ -170,6 +172,84 @@ function MindMapCanvasInner() {
     [viewCache, expandedIds, selectedId, loadingIds, taskVisibleLimits, statusFilter, adminUnlocked],
   );
 
+  // Resolve accurate direct-child counts in the background for visible collapsed nodes.
+  // Does not expand nodes or change layout structure — only updates childCount (/cache).
+  useEffect(() => {
+    const targets: string[] = [];
+
+    for (const node of nodes) {
+      if (node.data.isExpanded || node.data.isLoading) continue;
+      const record = cacheRef.current.get(node.id);
+      if (!record || record.data.childrenLoaded || record.data.childCount != null) continue;
+      if (countResolveInflight.current.has(node.id)) continue;
+
+      const { type } = parseNodeId(node.id);
+      if (type === "task" || type === "subtask" || type === "loadmore") continue;
+      // Skip huge lists — user confirm still applies on explicit expand.
+      if (type === "list" && (record.data.loadEstimate ?? 0) > LARGE_LIST_THRESHOLD) continue;
+
+      targets.push(node.id);
+    }
+
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    for (const id of targets) countResolveInflight.current.add(id);
+
+    void (async () => {
+      try {
+        const results = await mapWithConcurrency(targets, 3, async (nodeId) => {
+          try {
+            const record = cacheRef.current.get(nodeId);
+            if (!record || record.data.childrenLoaded) return null;
+            const { type } = parseNodeId(nodeId);
+            const workspaceId = record.data.workspaceId as string | undefined;
+            const children = await fetchChildren(
+              nodeId,
+              type === "member" ? { workspaceId } : undefined,
+            );
+            return { nodeId, children };
+          } catch {
+            return null;
+          }
+        });
+
+        if (cancelled) return;
+
+        setCache((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const result of results) {
+            if (!result) continue;
+            const parent = next.get(result.nodeId);
+            if (!parent || parent.data.childrenLoaded) continue;
+            changed = true;
+            const directCount = result.children.filter((c) => c.data.parentId === result.nodeId)
+              .length;
+            next.set(result.nodeId, {
+              ...parent,
+              data: {
+                ...parent.data,
+                childrenLoaded: true,
+                childCount: directCount > 0 ? directCount : undefined,
+              },
+            });
+            for (const child of result.children) {
+              if (!next.has(child.id)) next.set(child.id, child);
+            }
+          }
+          return changed ? next : prev;
+        });
+      } finally {
+        for (const id of targets) countResolveInflight.current.delete(id);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nodes]);
+
   useEffect(() => {
     if (!selectedId) return;
     const record = viewCache.get(selectedId);
@@ -257,9 +337,14 @@ function MindMapCanvasInner() {
               const next = new Map(prev);
               const parent = next.get(wsId);
               if (parent) {
+                const directCount = children.filter((c) => c.data.parentId === wsId).length;
                 next.set(wsId, {
                   ...parent,
-                  data: { ...parent.data, childrenLoaded: true },
+                  data: {
+                    ...parent.data,
+                    childrenLoaded: true,
+                    childCount: directCount > 0 ? directCount : undefined,
+                  },
                 });
               }
               for (const child of children) next.set(child.id, child);
@@ -325,10 +410,14 @@ function MindMapCanvasInner() {
               const next = new Map(prev);
               const parent = next.get(memberId);
               if (parent) {
-                const taskCount = memberChildren.filter((c) => c.data.type === "task").length;
+                const directCount = memberChildren.filter((c) => c.data.parentId === memberId).length;
                 next.set(memberId, {
                   ...parent,
-                  data: { ...parent.data, childrenLoaded: true, childCount: taskCount },
+                  data: {
+                    ...parent.data,
+                    childrenLoaded: true,
+                    childCount: directCount > 0 ? directCount : undefined,
+                  },
                 });
               }
               for (const child of memberChildren) next.set(child.id, child);
@@ -401,13 +490,13 @@ function MindMapCanvasInner() {
 
   const loadChildren = useCallback(async (nodeId: string): Promise<boolean> => {
     let shouldLoad = false;
-    let childCount: number | undefined;
+    let loadEstimate: number | undefined;
 
     setCache((prev) => {
       const record = prev.get(nodeId);
       if (!record || record.data.childrenLoaded) return prev;
       shouldLoad = true;
-      childCount = record.data.childCount;
+      loadEstimate = record.data.loadEstimate;
       return prev;
     });
 
@@ -417,11 +506,11 @@ function MindMapCanvasInner() {
 
     if (
       type === "list" &&
-      childCount != null &&
-      childCount > LARGE_LIST_THRESHOLD
+      loadEstimate != null &&
+      loadEstimate > LARGE_LIST_THRESHOLD
     ) {
       const confirmed = window.confirm(
-        `This list has ${childCount} tasks. Loading may take a moment. Continue?`,
+        `This list has ${loadEstimate} tasks. Loading may take a moment. Continue?`,
       );
       if (!confirmed) return false;
     }
@@ -440,13 +529,13 @@ function MindMapCanvasInner() {
         const next = new Map(prev);
         const parent = next.get(nodeId);
         if (parent) {
-          const taskCount = children.filter((c) => c.data.type === "task").length;
+          const directCount = children.filter((c) => c.data.parentId === nodeId).length;
           next.set(nodeId, {
             ...parent,
             data: {
               ...parent.data,
               childrenLoaded: true,
-              childCount: type === "member" ? taskCount : parent.data.childCount,
+              childCount: directCount > 0 ? directCount : undefined,
             },
           });
         }

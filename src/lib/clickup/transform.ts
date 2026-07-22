@@ -66,7 +66,6 @@ export function spaceToNode(space: ClickUpSpace, parentId: string): NodeRecord {
 
 export function folderToNode(folder: ClickUpFolder, parentId: string): NodeRecord {
   const id = makeNodeId("folder", folder.id);
-  const childCount = parseCount(folder.task_count);
   return {
     id,
     data: {
@@ -76,14 +75,13 @@ export function folderToNode(folder: ClickUpFolder, parentId: string): NodeRecor
       label: folder.name,
       hasChildren: true,
       childrenLoaded: false,
-      childCount,
+      // Do not use folder.task_count — expand shows lists, not tasks.
     },
   };
 }
 
 export function listToNode(list: ClickUpList, parentId: string): NodeRecord {
   const id = makeNodeId("list", list.id);
-  const childCount = parseCount(list.task_count);
   return {
     id,
     data: {
@@ -93,7 +91,9 @@ export function listToNode(list: ClickUpList, parentId: string): NodeRecord {
       label: resolveListLabel(list),
       hasChildren: true,
       childrenLoaded: false,
-      childCount,
+      // ClickUp task_count includes nested subtasks; direct children are top-level only.
+      // Keep estimate solely for large-list load confirmation.
+      loadEstimate: parseCount(list.task_count),
       listId: list.id,
     },
   };
@@ -296,10 +296,13 @@ export function tasksToMemberListNodes(
     counts.set(parent, (counts.get(parent) ?? 0) + 1);
   }
 
-  const listNodesWithCounts = listNodes.map((n) => ({
-    ...n,
-    data: { ...n.data, childCount: counts.get(n.id) ?? 0 },
-  }));
+  const listNodesWithCounts = listNodes.map((n) => {
+    const count = counts.get(n.id) ?? 0;
+    return {
+      ...n,
+      data: { ...n.data, childCount: count > 0 ? count : undefined },
+    };
+  });
 
   return [...listNodesWithCounts, ...taskNodes];
 }
