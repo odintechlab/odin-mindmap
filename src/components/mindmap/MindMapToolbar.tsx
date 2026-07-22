@@ -15,7 +15,6 @@ import { HeaderMoreMenu, type HeaderMoreItem } from "@/components/layout/HeaderM
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import type { TaskStatusFilter } from "@/lib/mindmap/constants";
-import type { NodeRecord } from "@/types/mindmap";
 
 export type MindMapScope =
   | { mode: "all" }
@@ -34,7 +33,6 @@ interface WorkspaceOption {
 }
 
 interface MindMapToolbarProps {
-  breadcrumbs: NodeRecord[];
   statusFilter: TaskStatusFilter;
   onStatusFilterChange: (filter: TaskStatusFilter) => void;
   onZoomIn: () => void;
@@ -366,7 +364,6 @@ function ScopeDropdown({
 }
 
 export function MindMapToolbar({
-  breadcrumbs,
   statusFilter,
   onStatusFilterChange,
   onZoomIn,
@@ -418,21 +415,8 @@ export function MindMapToolbar({
     [onFitView, onZoomIn, onZoomOut, theme, toggleTheme],
   );
 
-  const breadcrumbItems =
-    breadcrumbs.length > 0
-      ? breadcrumbs.map((crumb, i) => (
-          <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-            {i > 0 && <span className="text-[var(--border-strong)]">/</span>}
-            <span className="max-w-[100px] truncate font-medium sm:max-w-[140px]">
-              {crumb.data.label}
-            </span>
-          </span>
-        ))
-      : null;
-
   return (
     <AppHeader
-      breadcrumbs={breadcrumbItems}
       filters={
         <HeaderContextGroup>
           <HeaderControl label="Workspace" grouped>
