@@ -2,7 +2,6 @@
 
 import {
   AppHeader,
-  HeaderActions,
   HeaderContextGroup,
   HeaderControl,
   headerSelectClass,
@@ -68,7 +67,7 @@ export function TabPageShell({
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <AppHeader
-        controls={
+        filters={
           <>
             <HeaderContextGroup>
               <HeaderControl label="Workspace" grouped>
@@ -125,13 +124,12 @@ export function TabPageShell({
                 ))}
               </div>
             )}
-
-            <HeaderActions>
-              <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-                {theme === "dark" ? <IconSun /> : <IconMoon />}
-              </Button>
-            </HeaderActions>
           </>
+        }
+        actions={
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
+            {theme === "dark" ? <IconSun /> : <IconMoon />}
+          </Button>
         }
       />
 

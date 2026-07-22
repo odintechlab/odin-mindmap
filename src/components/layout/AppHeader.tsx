@@ -32,23 +32,23 @@ export function AppLogo({ compact = false }: { compact?: boolean }) {
 
 /** Shared shell styling for the app header */
 export const appHeaderClass =
-  "safe-top glass sticky top-0 z-[100] shrink-0 overflow-visible border-b border-[var(--border)] px-4 py-2.5 sm:px-5 sm:py-3 lg:px-6 lg:py-2.5";
+  "safe-top glass sticky top-0 z-[100] shrink-0 overflow-visible border-b border-[var(--border)] px-4 py-3 sm:px-5 lg:px-6 lg:py-2.5";
 
-/** Desktop header row — single line, consistent height across tabs */
-export const appHeaderDesktopRowClass = "hidden min-w-0 items-center gap-4 lg:flex";
+/** @deprecated Prefer the slot-based AppHeader layout */
+export const appHeaderDesktopRowClass = "hidden min-w-0 items-center gap-3 lg:flex";
 
 /** Shared select styling for header controls */
 export const headerSelectClass =
-  "glass-solid w-full min-w-0 truncate min-h-[2.75rem] rounded-xl border border-[var(--border-strong)] px-3 py-2 text-xs font-medium leading-none text-zinc-700 shadow-sm dark:text-zinc-200 lg:min-h-[2.25rem] lg:max-w-[10.5rem] lg:px-2.5 lg:py-1.5 xl:max-w-[12rem]";
+  "glass-solid min-h-[2.5rem] w-full min-w-0 truncate rounded-xl border border-[var(--border-strong)] px-3 py-2 text-xs font-medium leading-none text-zinc-700 shadow-sm dark:text-zinc-200 sm:w-auto sm:min-w-[9.5rem] lg:min-h-[2.25rem] lg:max-w-[11rem] lg:px-2.5 lg:py-1.5";
 
 /** Compact trigger for header dropdowns — matches select height on desktop */
 export const headerDropdownTriggerClass =
-  "glass-solid flex items-center gap-2 rounded-xl border border-[var(--border-strong)] px-2.5 py-1.5 text-xs font-medium leading-none text-zinc-700 shadow-sm transition-colors hover:bg-black/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06] lg:min-h-[2.25rem]";
+  "glass-solid flex min-h-[2.5rem] items-center gap-2 rounded-xl border border-[var(--border-strong)] px-2.5 py-1.5 text-xs font-medium leading-none text-zinc-700 shadow-sm transition-colors hover:bg-black/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06] lg:min-h-[2.25rem]";
 
-/** Groups workspace/project filters into one compact cluster on desktop */
+/** Groups related filters into one compact cluster */
 export function HeaderContextGroup({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:gap-1 lg:rounded-xl lg:border lg:border-[var(--border-strong)] lg:bg-[color-mix(in_srgb,var(--panel-solid)_88%,transparent)] lg:p-1 lg:shadow-sm [&_select]:lg:border-0 [&_select]:lg:bg-transparent [&_select]:lg:shadow-none">
+    <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 lg:flex-nowrap lg:gap-1 lg:rounded-xl lg:border lg:border-[var(--border-strong)] lg:bg-[color-mix(in_srgb,var(--panel-solid)_88%,transparent)] lg:p-1 lg:shadow-sm [&_select]:lg:border-0 [&_select]:lg:bg-transparent [&_select]:lg:shadow-none [&_button]:lg:border-0 [&_button]:lg:bg-transparent [&_button]:lg:shadow-none [&_button]:lg:min-h-[2rem]">
       {children}
     </div>
   );
@@ -68,7 +68,7 @@ export function HeaderControl({
 }) {
   return (
     <div
-      className={`flex min-w-0 w-full items-center gap-2 lg:w-auto lg:flex-initial ${
+      className={`flex min-w-0 w-full items-center gap-2 sm:w-auto ${
         grouped ? "lg:px-0.5" : ""
       } ${className}`}
     >
@@ -79,49 +79,80 @@ export function HeaderControl({
       >
         {label}
       </span>
-      <div className="min-w-0 flex-1 lg:flex-initial">{children}</div>
+      <div className="min-w-0 flex-1 sm:flex-initial">{children}</div>
     </div>
   );
 }
 
-/** Icon-only actions (theme toggle, zoom) — stays compact on mobile */
+/** Icon-only actions cluster */
 export function HeaderActions({ children }: { children: React.ReactNode }) {
   return <div className="flex shrink-0 items-center gap-0.5">{children}</div>;
 }
 
 interface AppHeaderProps {
-  controls: React.ReactNode;
+  /** Context filters (workspace, scope, status, project, range) */
+  filters?: React.ReactNode;
+  /** Primary icon actions (admin lock, overflow menu, theme) */
+  actions?: React.ReactNode;
   breadcrumbs?: React.ReactNode;
+  /**
+   * Legacy single-slot API — prefer `filters` + `actions`.
+   * When provided without filters/actions, rendered in the filters area.
+   */
+  controls?: React.ReactNode;
 }
 
-export function AppHeader({ controls, breadcrumbs }: AppHeaderProps) {
+export function AppHeader({
+  filters,
+  actions,
+  breadcrumbs,
+  controls,
+}: AppHeaderProps) {
+  const filterContent = filters ?? controls;
+  const breadcrumbNav = breadcrumbs ? (
+    <nav className="flex min-w-0 items-center gap-1 text-xs text-[var(--muted)]">
+      {breadcrumbs}
+    </nav>
+  ) : null;
+
   return (
     <header className={appHeaderClass}>
-      {/* Mobile & tablet: brand, then nav + contextual controls */}
-      <div className="flex flex-col gap-2.5 lg:hidden">
-        <AppLogo compact />
-        <AppNav />
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          {controls}
+      {/* Mobile & tablet */}
+      <div className="flex flex-col gap-3 lg:hidden">
+        <div className="flex items-center gap-3">
+          <AppLogo compact />
+          <div className="min-w-0 flex-1">
+            <AppNav />
+          </div>
+          {actions ? <HeaderActions>{actions}</HeaderActions> : null}
         </div>
+
+        {breadcrumbNav}
+
+        {filterContent ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            {filterContent}
+          </div>
+        ) : null}
       </div>
 
-      {/* Desktop: left-aligned brand + nav, controls on the right */}
-      <div className={appHeaderDesktopRowClass}>
-        <div className="flex min-w-0 flex-1 items-center gap-4">
+      {/* Desktop */}
+      <div className="hidden min-w-0 items-center gap-3 lg:flex">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <AppLogo />
           <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
           <AppNav />
-          {breadcrumbs ? (
+          {breadcrumbNav ? (
             <>
               <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
-              <div className="min-w-0">{breadcrumbs}</div>
+              <div className="min-w-0">{breadcrumbNav}</div>
             </>
           ) : null}
         </div>
 
-        <div className="flex shrink-0 flex-nowrap items-center gap-2 xl:gap-2.5">
-          {controls}
+        <div className="flex shrink-0 items-center gap-2 xl:gap-2.5">
+          {filterContent}
+          {actions ? <HeaderActions>{actions}</HeaderActions> : null}
         </div>
       </div>
     </header>

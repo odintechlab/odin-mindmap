@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
   AppHeader,
-  HeaderActions,
   HeaderContextGroup,
   HeaderControl,
   headerSelectClass,
@@ -42,7 +41,7 @@ export default function NetworkPage() {
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden">
       <AppHeader
-        controls={
+        filters={
           <>
             <HeaderContextGroup>
               <HeaderControl label="Workspace" grouped>
@@ -62,49 +61,48 @@ export default function NetworkPage() {
               </HeaderControl>
             </HeaderContextGroup>
 
-            <div className="flex shrink-0 basis-full items-center gap-2 sm:basis-auto">
+            <div className="flex shrink-0 items-center gap-2">
               <div className="glass-solid flex rounded-xl border border-[var(--border-strong)] p-0.5">
-              {(["people", "projects"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={`rounded-lg px-3.5 py-2 text-xs font-semibold capitalize transition-colors ${
-                    viewMode === mode
-                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
-                      : "text-[var(--muted)] hover:text-zinc-700 dark:hover:text-zinc-200"
-                  }`}
-                >
-                  {mode}
-                </button>
-              ))}
+                {(["people", "projects"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                      viewMode === mode
+                        ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300"
+                        : "text-[var(--muted)] hover:text-zinc-700 dark:hover:text-zinc-200"
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                ))}
               </div>
 
               <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              <input
-                type="checkbox"
-                checked={collabOnly}
-                onChange={(e) => setCollabOnly(e.target.checked)}
-                className="rounded border-[var(--border-strong)] text-indigo-600 focus:ring-indigo-500/40"
-              />
-              <span className="hidden sm:inline">Only collaborations</span>
-              <span className="sm:hidden">Collab</span>
-            </label>
+                <input
+                  type="checkbox"
+                  checked={collabOnly}
+                  onChange={(e) => setCollabOnly(e.target.checked)}
+                  className="rounded border-[var(--border-strong)] text-indigo-600 focus:ring-indigo-500/40"
+                />
+                <span className="hidden sm:inline">Only collaborations</span>
+                <span className="sm:hidden">Collab</span>
+              </label>
             </div>
 
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search…"
-              className="min-w-0 basis-full py-2 text-xs sm:basis-auto sm:w-36"
+              className="min-w-0 w-full py-2 text-xs sm:w-36"
             />
-
-            <HeaderActions>
-              <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-                {theme === "dark" ? <IconSun /> : <IconMoon />}
-              </Button>
-            </HeaderActions>
           </>
+        }
+        actions={
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
+            {theme === "dark" ? <IconSun /> : <IconMoon />}
+          </Button>
         }
       />
 
