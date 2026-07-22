@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Avatar } from "@/components/ui/Avatar";
-import { AccessSignOutButton } from "@/components/auth/AccessSignOutButton";
 import { AppNav } from "@/components/AppNav";
 import { AppLogo, appHeaderClass, appHeaderDesktopRowClass, headerDropdownTriggerClass, headerSelectClass, HeaderActions, HeaderContextGroup, HeaderControl } from "@/components/layout/AppHeader";
 import { useTheme } from "@/components/ui/ThemeProvider";
@@ -42,7 +41,7 @@ interface MindMapToolbarProps {
   scope: MindMapScope;
   onScopeChange: (scope: MindMapScope) => void;
   adminUnlocked: boolean;
-  onAdminUnlock: (pin: string) => Promise<boolean>;
+  onAdminUnlock: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   onAdminLock: () => void;
   members: MemberOption[];
 }
@@ -283,11 +282,11 @@ export function MindMapToolbar({
     setPinError(null);
     setUnlocking(true);
     try {
-      const ok = await onAdminUnlock(pin);
-      if (ok) {
+      const result = await onAdminUnlock(pin);
+      if (result.ok) {
         setPinOpen(false);
       } else {
-        setPinError("Wrong PIN");
+        setPinError(result.error);
       }
     } finally {
       setUnlocking(false);
@@ -338,7 +337,6 @@ export function MindMapToolbar({
           <div className="flex flex-wrap items-center gap-2">
             <ScopeDropdown scope={scope} onChange={onScopeChange} members={members} />
             <StatusFilterDropdown value={statusFilter} onChange={onStatusFilterChange} />
-            <AccessSignOutButton />
             <div className="ml-auto flex items-center gap-0.5">
               <div className="relative">
                 <Button
@@ -384,7 +382,7 @@ export function MindMapToolbar({
                       </Button>
                       {pinError && <p className="px-0.5 text-[11px] text-red-500">{pinError}</p>}
                       <p className="px-0.5 text-[11px] text-[var(--muted)]">
-                        Unlock enables editing, People branch, and Me-only mode.
+                        Unlock enables editing and the People branch.
                       </p>
                     </div>
                   </div>
@@ -496,7 +494,7 @@ export function MindMapToolbar({
                     </Button>
                     {pinError && <p className="px-0.5 text-[11px] text-red-500">{pinError}</p>}
                     <p className="px-0.5 text-[11px] text-[var(--muted)]">
-                      Unlock enables editing, People branch, and Me-only mode.
+                      Unlock enables editing and the People branch.
                     </p>
                   </div>
                 </div>
@@ -518,7 +516,6 @@ export function MindMapToolbar({
               {theme === "dark" ? <IconSun /> : <IconMoon />}
             </Button>
           </HeaderActions>
-          <AccessSignOutButton />
         </div>
       </div>
     </header>

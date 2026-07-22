@@ -61,8 +61,15 @@ src/
 
 Everything else uses Next.js, React, and Tailwind CSS.
 
+## Access model
+
+The app is **publicly readable**. Anyone with the URL can view the mind map and related pages.
+
+**Editing** (create / update / delete tasks) requires unlocking with `ADMIN_PIN` via the lock icon in the toolbar. Write APIs reject requests without a valid admin session cookie.
+
 ## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `CLICKUP_TOKEN` | Yes | Personal API token from ClickUp settings |
+| `ADMIN_PIN` | Yes (for editing) | Server-only PIN to unlock task create/update/delete. Editing is disabled if unset. |
