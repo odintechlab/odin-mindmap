@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   AppHeader,
-  HeaderActions,
   HeaderContextGroup,
   HeaderControl,
   headerSelectClass,
@@ -117,49 +116,46 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <AppHeader
-        controls={
-          <>
-            <HeaderContextGroup>
-              <HeaderControl label="Workspace" grouped>
-                <select
-                  value={activeTeamId ?? ""}
-                  onChange={(e) => handleTeamChange(e.target.value)}
-                  disabled={wsLoading || workspaces.length === 0}
-                  className={headerSelectClass}
-                  aria-label="Workspace"
-                >
-                  {workspaces.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.label}
-                    </option>
-                  ))}
-                </select>
-              </HeaderControl>
+        filters={
+          <HeaderContextGroup>
+            <HeaderControl label="Workspace" grouped>
+              <select
+                value={activeTeamId ?? ""}
+                onChange={(e) => handleTeamChange(e.target.value)}
+                disabled={wsLoading || workspaces.length === 0}
+                className={headerSelectClass}
+                aria-label="Workspace"
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </HeaderControl>
 
-              <HeaderControl label="Project" grouped>
-                <select
-                  value={listId ?? ""}
-                  onChange={(e) => setListId(e.target.value || null)}
-                  disabled={!activeTeamId || projects.length === 0}
-                  className={headerSelectClass}
-                  aria-label="Project"
-                >
-                  <option value="">All projects</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.taskCount})
-                    </option>
-                  ))}
-                </select>
-              </HeaderControl>
-            </HeaderContextGroup>
-
-            <HeaderActions>
-              <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-                {theme === "dark" ? <IconSun /> : <IconMoon />}
-              </Button>
-            </HeaderActions>
-          </>
+            <HeaderControl label="Project" grouped>
+              <select
+                value={listId ?? ""}
+                onChange={(e) => setListId(e.target.value || null)}
+                disabled={!activeTeamId || projects.length === 0}
+                className={headerSelectClass}
+                aria-label="Project"
+              >
+                <option value="">All projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.taskCount})
+                  </option>
+                ))}
+              </select>
+            </HeaderControl>
+          </HeaderContextGroup>
+        }
+        actions={
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
+            {theme === "dark" ? <IconSun /> : <IconMoon />}
+          </Button>
         }
       />
 

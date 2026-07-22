@@ -25,7 +25,10 @@ export interface MindMapNodeData {
   dueDate?: string | null;
   assignees?: MindMapAssignee[];
   url?: string;
+  /** Accurate direct-child count (only set when known). */
   childCount?: number;
+  /** ClickUp task_count estimate — used only for large-list load confirm, not display. */
+  loadEstimate?: number;
   childrenLoaded?: boolean;
   listId?: string;
   statuses?: { name: string; color: string }[];

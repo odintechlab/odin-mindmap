@@ -159,7 +159,7 @@ function MindMapNodeComponent({ data }: NodeProps) {
                   >
                     {node.type}
                   </span>
-                  {node.childCount != null && !node.childrenLoaded && (
+                  {node.childCount != null && node.childCount > 0 && !node.isExpanded && (
                     <span className="text-[10px] font-medium text-[var(--muted)]">
                       {node.childCount} items
                     </span>

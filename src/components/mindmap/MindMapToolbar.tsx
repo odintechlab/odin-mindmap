@@ -4,13 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Avatar } from "@/components/ui/Avatar";
-import { AccessSignOutButton } from "@/components/auth/AccessSignOutButton";
-import { AppNav } from "@/components/AppNav";
-import { AppLogo, appHeaderClass, appHeaderDesktopRowClass, headerDropdownTriggerClass, headerSelectClass, HeaderActions, HeaderContextGroup, HeaderControl } from "@/components/layout/AppHeader";
+import {
+  AppHeader,
+  HeaderContextGroup,
+  HeaderControl,
+  headerDropdownTriggerClass,
+  headerSelectClass,
+} from "@/components/layout/AppHeader";
+import { HeaderMoreMenu, type HeaderMoreItem } from "@/components/layout/HeaderMoreMenu";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
 import type { TaskStatusFilter } from "@/lib/mindmap/constants";
-import type { NodeRecord } from "@/types/mindmap";
 
 export type MindMapScope =
   | { mode: "all" }
@@ -29,7 +33,6 @@ interface WorkspaceOption {
 }
 
 interface MindMapToolbarProps {
-  breadcrumbs: NodeRecord[];
   statusFilter: TaskStatusFilter;
   onStatusFilterChange: (filter: TaskStatusFilter) => void;
   onZoomIn: () => void;
@@ -42,7 +45,7 @@ interface MindMapToolbarProps {
   scope: MindMapScope;
   onScopeChange: (scope: MindMapScope) => void;
   adminUnlocked: boolean;
-  onAdminUnlock: (pin: string) => Promise<boolean>;
+  onAdminUnlock: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   onAdminLock: () => void;
   members: MemberOption[];
 }
@@ -107,6 +110,111 @@ function IconLock({ unlocked }: { unlocked: boolean }) {
   );
 }
 
+function AdminLockControl({
+  adminUnlocked,
+  onAdminUnlock,
+  onAdminLock,
+}: {
+  adminUnlocked: boolean;
+  onAdminUnlock: (pin: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onAdminLock: () => void;
+}) {
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pinOpen) {
+      setPin("");
+      setPinError(null);
+    }
+  }, [pinOpen]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setPinOpen(false);
+    }
+    if (pinOpen) document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [pinOpen]);
+
+  const tryUnlock = async () => {
+    setPinError(null);
+    setUnlocking(true);
+    try {
+      const result = await onAdminUnlock(pin);
+      if (result.ok) {
+        setPinOpen(false);
+      } else {
+        setPinError(result.error);
+      }
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => {
+          if (adminUnlocked) {
+            onAdminLock();
+            return;
+          }
+          setPinOpen((v) => !v);
+        }}
+        title={adminUnlocked ? "Lock admin" : "Unlock admin"}
+        aria-label={adminUnlocked ? "Lock admin" : "Unlock admin"}
+        className={
+          adminUnlocked
+            ? "text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+            : undefined
+        }
+      >
+        <IconLock unlocked={adminUnlocked} />
+      </Button>
+
+      {pinOpen && !adminUnlocked && (
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[240px] overflow-hidden rounded-xl border border-[var(--border-strong)] glass-solid p-2 shadow-surface-lg">
+          <p className="px-1 pb-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+            Enter admin PIN
+          </p>
+          <div className="space-y-2 px-1">
+            <Input
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="PIN"
+              type="password"
+              className="py-1.5 text-xs"
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || unlocking) return;
+                void tryUnlock();
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={unlocking}
+              onClick={() => void tryUnlock()}
+            >
+              {unlocking ? "Unlocking…" : "Unlock"}
+            </Button>
+            {pinError && <p className="px-0.5 text-[11px] text-red-500">{pinError}</p>}
+            <p className="px-0.5 text-[11px] text-[var(--muted)]">
+              Unlock enables editing and the People branch.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScopeDropdown({
   scope,
   onChange,
@@ -153,7 +261,7 @@ function ScopeDropdown({
             </svg>
           </span>
         )}
-        <span className="max-w-[140px] truncate">{label}</span>
+        <span className="max-w-[120px] truncate sm:max-w-[140px]">{label}</span>
         <svg
           width="12"
           height="12"
@@ -169,7 +277,7 @@ function ScopeDropdown({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1.5 w-[280px] overflow-hidden rounded-xl border border-[var(--border-strong)] glass-solid p-2 shadow-surface-lg">
+        <div className="absolute left-0 top-full z-50 mt-1.5 w-[min(280px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[var(--border-strong)] glass-solid p-2 shadow-surface-lg sm:left-auto sm:right-0">
           <div className="px-1 pb-2">
             <Input
               value={query}
@@ -256,7 +364,6 @@ function ScopeDropdown({
 }
 
 export function MindMapToolbar({
-  breadcrumbs,
   statusFilter,
   onStatusFilterChange,
   onZoomIn,
@@ -274,253 +381,77 @@ export function MindMapToolbar({
   members,
 }: MindMapToolbarProps) {
   const { theme, toggleTheme } = useTheme();
-  const [pinOpen, setPinOpen] = useState(false);
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [unlocking, setUnlocking] = useState(false);
 
-  const tryUnlock = async () => {
-    setPinError(null);
-    setUnlocking(true);
-    try {
-      const ok = await onAdminUnlock(pin);
-      if (ok) {
-        setPinOpen(false);
-      } else {
-        setPinError("Wrong PIN");
-      }
-    } finally {
-      setUnlocking(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!pinOpen) {
-      setPin("");
-      setPinError(null);
-    }
-  }, [pinOpen]);
+  const moreItems: HeaderMoreItem[] = useMemo(
+    () => [
+      {
+        id: "zoom-out",
+        label: "Zoom out",
+        icon: <IconZoomOut />,
+        shortcut: "−",
+        onClick: onZoomOut,
+      },
+      {
+        id: "zoom-in",
+        label: "Zoom in",
+        icon: <IconZoomIn />,
+        shortcut: "+",
+        onClick: onZoomIn,
+      },
+      {
+        id: "fit",
+        label: "Fit view",
+        icon: <IconFit />,
+        shortcut: "0",
+        onClick: onFitView,
+      },
+      {
+        id: "theme",
+        label: theme === "dark" ? "Light mode" : "Dark mode",
+        icon: theme === "dark" ? <IconSun /> : <IconMoon />,
+        onClick: toggleTheme,
+      },
+    ],
+    [onFitView, onZoomIn, onZoomOut, theme, toggleTheme],
+  );
 
   return (
-    <header className={appHeaderClass}>
-      {/* Mobile */}
-      <div className="flex flex-col gap-2.5 lg:hidden">
-        <AppLogo compact />
-
-        {breadcrumbs.length > 0 && (
-          <nav className="flex min-w-0 items-center gap-1 text-xs text-[var(--muted)]">
-            {breadcrumbs.map((crumb, i) => (
-              <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-                {i > 0 && <span className="text-[var(--border-strong)]">/</span>}
-                <span className="max-w-[140px] truncate font-medium">{crumb.data.label}</span>
-              </span>
-            ))}
-          </nav>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <AppNav />
-
-          <select
-            value={activeTeamId ?? ""}
-            onChange={(e) => onTeamChange(e.target.value)}
-            disabled={wsLoading || workspaces.length === 0}
-            className={headerSelectClass}
-            aria-label="Workspace"
-          >
-            {workspaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.label}
-              </option>
-            ))}
-          </select>
-
-          <div className="flex flex-wrap items-center gap-2">
+    <AppHeader
+      filters={
+        <HeaderContextGroup>
+          <HeaderControl label="Workspace" grouped>
+            <select
+              value={activeTeamId ?? ""}
+              onChange={(e) => onTeamChange(e.target.value)}
+              disabled={wsLoading || workspaces.length === 0}
+              className={headerSelectClass}
+              aria-label="Workspace"
+            >
+              {workspaces.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.label}
+                </option>
+              ))}
+            </select>
+          </HeaderControl>
+          <HeaderControl label="Scope" grouped>
             <ScopeDropdown scope={scope} onChange={onScopeChange} members={members} />
+          </HeaderControl>
+          <HeaderControl label="Status" grouped>
             <StatusFilterDropdown value={statusFilter} onChange={onStatusFilterChange} />
-            <AccessSignOutButton />
-            <div className="ml-auto flex items-center gap-0.5">
-              <div className="relative">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    if (adminUnlocked) {
-                      onAdminLock();
-                      return;
-                    }
-                    setPinOpen((v) => !v);
-                  }}
-                  title={adminUnlocked ? "Lock admin" : "Unlock admin"}
-                >
-                  <IconLock unlocked={adminUnlocked} />
-                </Button>
-
-                {pinOpen && !adminUnlocked && (
-                  <div className="absolute right-0 top-full z-50 mt-1.5 w-[240px] overflow-hidden rounded-xl border border-[var(--border-strong)] glass-solid p-2 shadow-surface-lg">
-                    <p className="px-1 pb-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                      Enter admin PIN
-                    </p>
-                    <div className="space-y-2 px-1">
-                      <Input
-                        value={pin}
-                        onChange={(e) => setPin(e.target.value)}
-                        placeholder="PIN"
-                        type="password"
-                        className="py-1.5 text-xs"
-                        onKeyDown={(e) => {
-                          if (e.key !== "Enter" || unlocking) return;
-                          void tryUnlock();
-                        }}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        disabled={unlocking}
-                        onClick={() => void tryUnlock()}
-                      >
-                        {unlocking ? "Unlocking…" : "Unlock"}
-                      </Button>
-                      {pinError && <p className="px-0.5 text-[11px] text-red-500">{pinError}</p>}
-                      <p className="px-0.5 text-[11px] text-[var(--muted)]">
-                        Unlock enables editing, People branch, and Me-only mode.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <Button variant="ghost" size="icon" onClick={onZoomOut} title="Zoom out (-)">
-                <IconZoomOut />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={onZoomIn} title="Zoom in (+)">
-                <IconZoomIn />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={onFitView} title="Fit view (0)">
-                <IconFit />
-              </Button>
-              <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-                {theme === "dark" ? <IconSun /> : <IconMoon />}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop */}
-      <div className={appHeaderDesktopRowClass}>
-        <div className="flex min-w-0 flex-1 items-center gap-4">
-          <AppLogo />
-          <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
-          <AppNav />
-
-          {breadcrumbs.length > 0 && (
-            <>
-              <div className="h-5 w-px shrink-0 bg-[var(--border-strong)]" aria-hidden />
-              <nav className="flex min-w-0 items-center gap-1 text-xs text-[var(--muted)]">
-                {breadcrumbs.map((crumb, i) => (
-                  <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-                    {i > 0 && <span className="text-[var(--border-strong)]">/</span>}
-                    <span className="max-w-[120px] truncate font-medium">{crumb.data.label}</span>
-                  </span>
-                ))}
-              </nav>
-            </>
-          )}
-        </div>
-
-        <div className="flex shrink-0 flex-nowrap items-center gap-2 xl:gap-2.5">
-          <HeaderContextGroup>
-            <HeaderControl label="Workspace" grouped>
-              <select
-                value={activeTeamId ?? ""}
-                onChange={(e) => onTeamChange(e.target.value)}
-                disabled={wsLoading || workspaces.length === 0}
-                className={headerSelectClass}
-                aria-label="Workspace"
-              >
-                {workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
-            </HeaderControl>
-          </HeaderContextGroup>
-
-          <ScopeDropdown scope={scope} onChange={onScopeChange} members={members} />
-          <StatusFilterDropdown value={statusFilter} onChange={onStatusFilterChange} />
-
-          <HeaderActions>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (adminUnlocked) {
-                    onAdminLock();
-                    return;
-                  }
-                  setPinOpen((v) => !v);
-                }}
-                title={adminUnlocked ? "Lock admin" : "Unlock admin"}
-              >
-                <IconLock unlocked={adminUnlocked} />
-              </Button>
-
-              {pinOpen && !adminUnlocked && (
-                <div className="absolute right-0 top-full z-50 mt-1.5 w-[240px] overflow-hidden rounded-xl border border-[var(--border-strong)] glass-solid p-2 shadow-surface-lg">
-                  <p className="px-1 pb-2 text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                    Enter admin PIN
-                  </p>
-                  <div className="space-y-2 px-1">
-                    <Input
-                      value={pin}
-                      onChange={(e) => setPin(e.target.value)}
-                      placeholder="PIN"
-                      type="password"
-                      className="py-1.5 text-xs"
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter" || unlocking) return;
-                        void tryUnlock();
-                      }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      disabled={unlocking}
-                      onClick={() => void tryUnlock()}
-                    >
-                      {unlocking ? "Unlocking…" : "Unlock"}
-                    </Button>
-                    {pinError && <p className="px-0.5 text-[11px] text-red-500">{pinError}</p>}
-                    <p className="px-0.5 text-[11px] text-[var(--muted)]">
-                      Unlock enables editing, People branch, and Me-only mode.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Button variant="ghost" size="icon" onClick={onZoomOut} title="Zoom out (-)">
-              <IconZoomOut />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onZoomIn} title="Zoom in (+)">
-              <IconZoomIn />
-            </Button>
-            <div className="mx-0.5 h-4 w-px bg-[var(--border-strong)]" />
-            <Button variant="ghost" size="icon" onClick={onFitView} title="Fit view (0)">
-              <IconFit />
-            </Button>
-            <div className="mx-0.5 h-4 w-px bg-[var(--border-strong)]" />
-            <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-              {theme === "dark" ? <IconSun /> : <IconMoon />}
-            </Button>
-          </HeaderActions>
-          <AccessSignOutButton />
-        </div>
-      </div>
-    </header>
+          </HeaderControl>
+        </HeaderContextGroup>
+      }
+      actions={
+        <>
+          <AdminLockControl
+            adminUnlocked={adminUnlocked}
+            onAdminUnlock={onAdminUnlock}
+            onAdminLock={onAdminLock}
+          />
+          <HeaderMoreMenu items={moreItems} label="View options" />
+        </>
+      }
+    />
   );
 }

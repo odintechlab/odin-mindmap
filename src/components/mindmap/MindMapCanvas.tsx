@@ -15,10 +15,12 @@ import { MindMapNode } from "./nodes/MindMapNode";
 import { MindMapToolbar, type MemberOption, type MindMapScope } from "./MindMapToolbar";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 import { CreateTaskDialog } from "./CreateTaskDialog";
-import { buildVisibleGraph, getBreadcrumb } from "@/lib/mindmap/buildGraph";
+import { buildVisibleGraph } from "@/lib/mindmap/buildGraph";
 import { getAncestorIds, getSubtreeNodeIds } from "@/lib/mindmap/layout";
 import { TASK_PAGE_SIZE, type TaskStatusFilter } from "@/lib/mindmap/constants";
 import { fetchWorkspaces, fetchChildren, createTask, deleteTask } from "@/lib/mindmap/api";
+import { pathIdsFromSelection, readMindmapPath, writeMindmapPath, workspaceIdFromPath, isHierarchyPath } from "@/lib/mindmap/urlState";
+import { mapWithConcurrency } from "@/lib/utils/concurrency";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { usePersistedWorkspace } from "@/hooks/usePersistedWorkspace";
 import { useAdminUnlocked } from "@/hooks/useAdminUnlocked";
@@ -34,6 +36,55 @@ function cloneSet<T>(set: Set<T>): Set<T> {
   return new Set(set);
 }
 
+function mergeChildrenIntoCache(
+  map: Map<string, NodeRecord>,
+  parentId: string,
+  children: NodeRecord[],
+): void {
+  const parent = map.get(parentId);
+  if (parent) {
+    const directCount = children.filter((c) => c.data.parentId === parentId).length;
+    map.set(parentId, {
+      ...parent,
+      data: {
+        ...parent.data,
+        childrenLoaded: true,
+        childCount: directCount > 0 ? directCount : undefined,
+      },
+    });
+  }
+  for (const child of children) {
+    if (!map.has(child.id)) map.set(child.id, child);
+  }
+}
+
+/** Whether a deep-linked node would actually be visible in the current scope/admin mode. */
+function isRestorableSelection(
+  nodeId: string,
+  cache: Map<string, NodeRecord>,
+  scope: MindMapScope,
+  adminUnlocked: boolean,
+): boolean {
+  const record = cache.get(nodeId);
+  if (!record) return false;
+
+  const isPeopleish = record.data.type === "people" || record.data.type === "member";
+
+  if (scope.mode === "member") {
+    const memberId = makeNodeId("member", scope.userId);
+    let current: string | null = nodeId;
+    while (current) {
+      if (current === memberId) return true;
+      current = cache.get(current)?.data.parentId ?? null;
+    }
+    return false;
+  }
+
+  // All-scope: people/member nodes require admin unlock.
+  if (isPeopleish && !adminUnlocked) return false;
+  return true;
+}
+
 function MindMapCanvasInner() {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const { workspaces, loading: wsLoading, activeTeamId, setTeamId } = usePersistedWorkspace();
@@ -46,6 +97,8 @@ function MindMapCanvasInner() {
   const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>("all");
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("Loading workspaces…");
+  const [urlEpoch, setUrlEpoch] = useState(0);
   const [scope, setScope] = useState<MindMapScope>(() => {
     try {
       const raw = window.localStorage.getItem(SCOPE_KEY);
@@ -77,6 +130,8 @@ function MindMapCanvasInner() {
   const focusAfterLayoutRef = useRef<{ nodeId: string; mode: "subtree" | "self" } | null>(null);
   const cacheRef = useRef(cache);
   cacheRef.current = cache;
+  const countResolveInflight = useRef(new Set<string>());
+  const restoreAttemptedRef = useRef(false);
 
   const handleTeamChange = useCallback(
     (teamId: string) => {
@@ -107,10 +162,6 @@ function MindMapCanvasInner() {
   }, []);
 
   const selectedNode = selectedId ? cache.get(selectedId) ?? null : null;
-  const breadcrumbs = useMemo(
-    () => getBreadcrumb(selectedId, cache),
-    [selectedId, cache],
-  );
 
   const viewCache = useMemo(() => {
     // Filter graph for current mode without mutating the underlying cache.
@@ -170,17 +221,105 @@ function MindMapCanvasInner() {
     [viewCache, expandedIds, selectedId, loadingIds, taskVisibleLimits, statusFilter, adminUnlocked],
   );
 
+  // Resolve accurate direct-child counts in the background for visible collapsed nodes.
+  // Does not expand nodes or change layout structure — only updates childCount (/cache).
+  useEffect(() => {
+    const targets: string[] = [];
+
+    for (const node of nodes) {
+      if (node.data.isExpanded || node.data.isLoading) continue;
+      const record = cacheRef.current.get(node.id);
+      if (!record || record.data.childrenLoaded || record.data.childCount != null) continue;
+      if (countResolveInflight.current.has(node.id)) continue;
+
+      const { type } = parseNodeId(node.id);
+      if (type === "task" || type === "subtask" || type === "loadmore") continue;
+      // Skip huge lists — user confirm still applies on explicit expand.
+      if (type === "list" && (record.data.loadEstimate ?? 0) > LARGE_LIST_THRESHOLD) continue;
+
+      targets.push(node.id);
+    }
+
+    if (targets.length === 0) return;
+
+    let cancelled = false;
+    for (const id of targets) countResolveInflight.current.add(id);
+
+    void (async () => {
+      try {
+        const results = await mapWithConcurrency(targets, 3, async (nodeId) => {
+          try {
+            const record = cacheRef.current.get(nodeId);
+            if (!record || record.data.childrenLoaded) return null;
+            const { type } = parseNodeId(nodeId);
+            const workspaceId = record.data.workspaceId as string | undefined;
+            const children = await fetchChildren(
+              nodeId,
+              type === "member" ? { workspaceId } : undefined,
+            );
+            return { nodeId, children };
+          } catch {
+            return null;
+          }
+        });
+
+        if (cancelled) return;
+
+        setCache((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const result of results) {
+            if (!result) continue;
+            const parent = next.get(result.nodeId);
+            if (!parent || parent.data.childrenLoaded) continue;
+            changed = true;
+            const directCount = result.children.filter((c) => c.data.parentId === result.nodeId)
+              .length;
+            next.set(result.nodeId, {
+              ...parent,
+              data: {
+                ...parent.data,
+                childrenLoaded: true,
+                childCount: directCount > 0 ? directCount : undefined,
+              },
+            });
+            for (const child of result.children) {
+              if (!next.has(child.id)) next.set(child.id, child);
+            }
+          }
+          return changed ? next : prev;
+        });
+      } finally {
+        for (const id of targets) countResolveInflight.current.delete(id);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [nodes]);
+
   useEffect(() => {
     if (!selectedId) return;
     const record = viewCache.get(selectedId);
-    if (
-      record &&
-      isTaskType(record.data.type) &&
-      !matchesStatusFilter(record.data, statusFilter)
-    ) {
+    if (!record) {
+      // Hidden by scope / admin lock — drop stale selection.
+      setSelectedId(null);
+      return;
+    }
+    if (isTaskType(record.data.type) && !matchesStatusFilter(record.data, statusFilter)) {
       setSelectedId(null);
     }
   }, [statusFilter, selectedId, viewCache]);
+
+  // Browser back/forward — re-read the deep link and reload the graph.
+  useEffect(() => {
+    function onPopState() {
+      setUrlEpoch((n) => n + 1);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const resetGraph = useCallback(() => {
     setCache(new Map());
@@ -191,40 +330,68 @@ function MindMapCanvasInner() {
     setError(null);
     fitOnNextLayout.current = false;
     focusAfterLayoutRef.current = null;
+    restoreAttemptedRef.current = false;
   }, []);
 
-  // Initial load / scope load
+  // Initial load / scope load (+ deep-link restore before first paint of the graph)
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (!activeTeamId && wsLoading) return;
 
+      let deferLoading = false;
+
       try {
         resetGraph();
         setInitialLoading(true);
 
+        const path = readMindmapPath();
+        setLoadingMessage(path.length > 0 ? "Opening location…" : "Loading workspaces…");
+
+        // Hierarchy deep links should not stay stuck in Me-only scope.
+        if (path.length > 0 && scope.mode === "member" && isHierarchyPath(path)) {
+          try {
+            window.localStorage.setItem(SCOPE_KEY, JSON.stringify({ mode: "all" }));
+          } catch {
+            // ignore
+          }
+          deferLoading = true;
+          setScope({ mode: "all" });
+          return;
+        }
+
+        const bootCache = new Map<string, NodeRecord>();
+        const bootExpanded = new Set<string>();
+        const bootLimits = new Map<string, number>();
+
         const allWorkspaceNodes = await fetchWorkspaces();
         if (cancelled) return;
+
+        // Align persisted workspace with the deep-link workspace when needed.
+        const pathWorkspaceId = workspaceIdFromPath(path);
+        if (
+          pathWorkspaceId &&
+          allWorkspaceNodes.some((n) => n.data.clickupId === pathWorkspaceId) &&
+          pathWorkspaceId !== activeTeamId
+        ) {
+          deferLoading = true;
+          setTeamId(pathWorkspaceId);
+          return;
+        }
 
         const workspaceNodes = activeTeamId
           ? allWorkspaceNodes.filter((n) => parseNodeId(n.id).clickupId === activeTeamId)
           : allWorkspaceNodes;
 
-        setCache((prev) => {
-          const next = new Map(prev);
-          for (const node of workspaceNodes) {
-            next.set(node.id, node);
-          }
-          return next;
-        });
+        for (const node of workspaceNodes) bootCache.set(node.id, node);
 
         const wsIds =
           scope.mode === "all"
             ? workspaceNodes.map((n) => n.id)
             : [makeNodeId("workspace", scope.teamId)];
 
-        setExpandedIds(new Set(wsIds));
+        for (const wsId of wsIds) bootExpanded.add(wsId);
 
         // Prefetch members for the Scope dropdown (selected workspace only).
         const allMembers: MemberOption[] = [];
@@ -250,113 +417,166 @@ function MindMapCanvasInner() {
         if (!cancelled) setMembers(allMembers.sort((a, b) => a.label.localeCompare(b.label)));
 
         for (const wsId of wsIds) {
-          setLoadingIds((prev) => cloneSet(prev).add(wsId));
           try {
             const children = await fetchChildren(wsId);
-            setCache((prev) => {
-              const next = new Map(prev);
-              const parent = next.get(wsId);
-              if (parent) {
-                next.set(wsId, {
-                  ...parent,
-                  data: { ...parent.data, childrenLoaded: true },
-                });
-              }
-              for (const child of children) next.set(child.id, child);
-              return next;
-            });
+            if (cancelled) return;
+            mergeChildrenIntoCache(bootCache, wsId, children);
           } catch (err) {
             if (!cancelled) {
               setError(err instanceof Error ? err.message : "Failed to load spaces");
             }
-          } finally {
-            setLoadingIds((prev) => {
-              const next = cloneSet(prev);
-              next.delete(wsId);
-              return next;
-            });
           }
         }
 
         if (scope.mode === "member") {
           const memberId = makeNodeId("member", scope.userId);
-
-          // Create a single-root member node.
-          setCache((prev) => {
-            const next = new Map(prev);
-            next.set(memberId, {
-              id: memberId,
-              data: {
-                type: "member",
-                clickupId: scope.userId,
-                parentId: null,
-                label: scope.label,
-                assignees: scope.profilePicture
-                  ? [
-                      {
-                        id: parseInt(scope.userId, 10),
-                        username: scope.label,
-                        profilePicture: scope.profilePicture,
-                      },
-                    ]
-                  : [
-                      {
-                        id: parseInt(scope.userId, 10),
-                        username: scope.label,
-                        profilePicture: null,
-                      },
-                    ],
-                workspaceId: scope.teamId,
-                hasChildren: true,
-                childrenLoaded: false,
-              },
-            });
-            return next;
+          bootCache.set(memberId, {
+            id: memberId,
+            data: {
+              type: "member",
+              clickupId: scope.userId,
+              parentId: null,
+              label: scope.label,
+              assignees: scope.profilePicture
+                ? [
+                    {
+                      id: parseInt(scope.userId, 10),
+                      username: scope.label,
+                      profilePicture: scope.profilePicture,
+                    },
+                  ]
+                : [
+                    {
+                      id: parseInt(scope.userId, 10),
+                      username: scope.label,
+                      profilePicture: null,
+                    },
+                  ],
+              workspaceId: scope.teamId,
+              hasChildren: true,
+              childrenLoaded: false,
+            },
           });
 
-          // Start collapsed (single node). User expands manually.
-          // (No auto-expansion in member scope.)
-
-          setLoadingIds((prev) => cloneSet(prev).add(memberId));
           try {
-            const memberChildren = await fetchChildren(memberId, { workspaceId: scope.teamId });
+            const memberChildren = await fetchChildren(memberId, {
+              workspaceId: scope.teamId,
+            });
             if (cancelled) return;
-            setCache((prev) => {
-              const next = new Map(prev);
-              const parent = next.get(memberId);
-              if (parent) {
-                const taskCount = memberChildren.filter((c) => c.data.type === "task").length;
-                next.set(memberId, {
-                  ...parent,
-                  data: { ...parent.data, childrenLoaded: true, childCount: taskCount },
-                });
-              }
-              for (const child of memberChildren) next.set(child.id, child);
-              return next;
-            });
-
-            // Set pagination defaults for the member root.
-            setTaskVisibleLimits((prev) => {
-              const next = new Map(prev);
-              next.set(memberId, TASK_PAGE_SIZE);
-              return next;
-            });
-          } finally {
-            setLoadingIds((prev) => {
-              const next = cloneSet(prev);
-              next.delete(memberId);
-              return next;
-            });
+            mergeChildrenIntoCache(bootCache, memberId, memberChildren);
+            bootLimits.set(memberId, TASK_PAGE_SIZE);
+          } catch {
+            // ignore — member scope still usable without children
           }
         }
 
-        fitOnNextLayout.current = true;
+        // Deep-link: expand the full path (including container leaves) before first paint.
+        let restoredId: string | null = null;
+        const containerTypes = new Set([
+          "workspace",
+          "space",
+          "folder",
+          "list",
+          "people",
+          "member",
+        ]);
+
+        if (path.length > 0) {
+          // Expand every ancestor, and the leaf when it's a container (so its children open).
+          for (let i = 0; i < path.length; i++) {
+            if (cancelled) return;
+            const id = path[i]!;
+            const isLeaf = i === path.length - 1;
+            if (!bootCache.has(id)) break;
+
+            const record = bootCache.get(id)!;
+            const shouldOpen = !isLeaf || containerTypes.has(record.data.type);
+            if (!shouldOpen) continue;
+
+            if (!record.data.childrenLoaded) {
+              try {
+                const { type } = parseNodeId(id);
+                const workspaceId = record.data.workspaceId as string | undefined;
+                const children = await fetchChildren(
+                  id,
+                  type === "member" ? { workspaceId } : undefined,
+                );
+                if (cancelled) return;
+                mergeChildrenIntoCache(bootCache, id, children);
+                if (type === "list" || type === "member") {
+                  bootLimits.set(id, Math.max(bootLimits.get(id) ?? 0, TASK_PAGE_SIZE));
+                }
+              } catch {
+                break;
+              }
+            }
+
+            bootExpanded.add(id);
+
+            // Keep a deep-linked task visible if it sits past the first page.
+            const nextId = path[i + 1];
+            const opened = bootCache.get(id);
+            if (
+              nextId &&
+              opened &&
+              (opened.data.type === "list" || opened.data.type === "member") &&
+              bootCache.has(nextId)
+            ) {
+              const siblings = [...bootCache.values()]
+                .filter((r) => r.data.parentId === id && r.data.type === "task")
+                .sort((a, b) => a.data.label.localeCompare(b.data.label));
+              const idx = siblings.findIndex((r) => r.id === nextId);
+              if (idx >= 0) {
+                bootLimits.set(id, Math.max(bootLimits.get(id) ?? TASK_PAGE_SIZE, idx + 1));
+              }
+            }
+          }
+
+          const leaf = path[path.length - 1]!;
+          if (
+            bootCache.has(leaf) &&
+            isRestorableSelection(leaf, bootCache, scope, adminUnlocked)
+          ) {
+            restoredId = leaf;
+          }
+        }
+
+        if (cancelled) return;
+
+        setCache(bootCache);
+        cacheRef.current = bootCache;
+        setExpandedIds(bootExpanded);
+        setTaskVisibleLimits(bootLimits);
+
+        if (restoredId) {
+          setSelectedId(restoredId);
+          const leafType = bootCache.get(restoredId)?.data.type;
+          focusAfterLayoutRef.current = {
+            nodeId: restoredId,
+            mode: leafType && containerTypes.has(leafType) ? "subtree" : "self",
+          };
+          fitOnNextLayout.current = false;
+          writeMindmapPath(pathIdsFromSelection(restoredId, bootCache));
+          const label = bootCache.get(restoredId)?.data.label;
+          document.title = label ? `${label} · Odin Mindmap` : "Odin Mindmap";
+        } else {
+          setSelectedId(null);
+          fitOnNextLayout.current = true;
+          if (path.length > 0) {
+            // Stale / out-of-scope deep link — drop it so we don't loop on a bad path.
+            writeMindmapPath([]);
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load workspaces");
+          restoreAttemptedRef.current = true;
         }
       } finally {
-        if (!cancelled) setInitialLoading(false);
+        if (!cancelled && !deferLoading) {
+          restoreAttemptedRef.current = true;
+          setInitialLoading(false);
+        }
       }
     }
 
@@ -364,7 +584,7 @@ function MindMapCanvasInner() {
     return () => {
       cancelled = true;
     };
-  }, [scope, adminUnlocked, activeTeamId, wsLoading, resetGraph]);
+  }, [scope, adminUnlocked, activeTeamId, wsLoading, resetGraph, setTeamId, urlEpoch]);
 
   // Auto fit / recenter after layout changes
   useEffect(() => {
@@ -399,15 +619,18 @@ function MindMapCanvasInner() {
     });
   }, [nodes, edges, fitView]);
 
-  const loadChildren = useCallback(async (nodeId: string): Promise<boolean> => {
+  const loadChildren = useCallback(async (
+    nodeId: string,
+    opts?: { quiet?: boolean },
+  ): Promise<boolean> => {
     let shouldLoad = false;
-    let childCount: number | undefined;
+    let loadEstimate: number | undefined;
 
     setCache((prev) => {
       const record = prev.get(nodeId);
       if (!record || record.data.childrenLoaded) return prev;
       shouldLoad = true;
-      childCount = record.data.childCount;
+      loadEstimate = record.data.loadEstimate;
       return prev;
     });
 
@@ -416,12 +639,13 @@ function MindMapCanvasInner() {
     const { type } = parseNodeId(nodeId);
 
     if (
+      !opts?.quiet &&
       type === "list" &&
-      childCount != null &&
-      childCount > LARGE_LIST_THRESHOLD
+      loadEstimate != null &&
+      loadEstimate > LARGE_LIST_THRESHOLD
     ) {
       const confirmed = window.confirm(
-        `This list has ${childCount} tasks. Loading may take a moment. Continue?`,
+        `This list has ${loadEstimate} tasks. Loading may take a moment. Continue?`,
       );
       if (!confirmed) return false;
     }
@@ -440,13 +664,13 @@ function MindMapCanvasInner() {
         const next = new Map(prev);
         const parent = next.get(nodeId);
         if (parent) {
-          const taskCount = children.filter((c) => c.data.type === "task").length;
+          const directCount = children.filter((c) => c.data.parentId === nodeId).length;
           next.set(nodeId, {
             ...parent,
             data: {
               ...parent.data,
               childrenLoaded: true,
-              childCount: type === "member" ? taskCount : parent.data.childCount,
+              childCount: directCount > 0 ? directCount : undefined,
             },
           });
         }
@@ -455,6 +679,7 @@ function MindMapCanvasInner() {
             next.set(child.id, child);
           }
         }
+        cacheRef.current = next;
         return next;
       });
 
@@ -468,7 +693,9 @@ function MindMapCanvasInner() {
 
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load children");
+      if (!opts?.quiet) {
+        setError(err instanceof Error ? err.message : "Failed to load children");
+      }
       return false;
     } finally {
       setLoadingIds((prev) => {
@@ -478,6 +705,24 @@ function MindMapCanvasInner() {
       });
     }
   }, []);
+
+  // Keep the URL in sync with the current selection (shareable + refresh-safe).
+  useEffect(() => {
+    if (initialLoading || !restoreAttemptedRef.current) return;
+
+    if (!selectedId) {
+      writeMindmapPath([]);
+      document.title = "Odin Mindmap";
+      return;
+    }
+
+    const path = pathIdsFromSelection(selectedId, cacheRef.current);
+    if (path.length === 0) return;
+    writeMindmapPath(path);
+
+    const label = cacheRef.current.get(selectedId)?.data.label;
+    document.title = label ? `${label} · Odin Mindmap` : "Odin Mindmap";
+  }, [selectedId, initialLoading]);
 
   const loadMoreTasks = useCallback((listNodeId: string) => {
     setTaskVisibleLimits((prev) => {
@@ -725,7 +970,6 @@ function MindMapCanvasInner() {
   return (
     <div className="flex h-screen flex-col">
       <MindMapToolbar
-        breadcrumbs={breadcrumbs}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         onZoomIn={() => zoomIn({ duration: 200 })}
@@ -761,7 +1005,7 @@ function MindMapCanvasInner() {
           {initialLoading ? (
             <div className="canvas-bg flex h-full flex-col items-center justify-center gap-4">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
-              <p className="text-sm font-medium text-[var(--muted)]">Loading workspaces…</p>
+              <p className="text-sm font-medium text-[var(--muted)]">{loadingMessage}</p>
             </div>
           ) : (
             <ReactFlow
