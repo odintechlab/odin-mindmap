@@ -85,6 +85,10 @@ export interface DashboardMemberWorkload {
 export interface DashboardStats {
   generatedAt: string;
   range: DashboardDateRange;
+  /** Absolute range start (YYYY-MM-DD), when set with `to`. */
+  from: string | null;
+  /** Absolute range end (YYYY-MM-DD), when set with `from`. */
+  to: string | null;
   listId: string | null;
   projects: DashboardProject[];
   totals: {

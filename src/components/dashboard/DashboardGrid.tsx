@@ -1,6 +1,7 @@
 "use client";
 
 import { ActivitySection } from "./ActivitySection";
+import { formatRangeLabel } from "./DateRangeDropdown";
 import { ForecastTimeline } from "./ForecastTimeline";
 import { GoalsSection } from "./GoalsSection";
 import { KpiGrid } from "./KpiGrid";
@@ -16,16 +17,31 @@ export function DashboardGrid({ stats }: DashboardGridProps) {
   const activeProject = stats.listId
     ? stats.projects.find((p) => p.id === stats.listId)
     : null;
+  const periodLabel =
+    stats.from && stats.to ? formatRangeLabel(stats.from, stats.to) : null;
 
   return (
     <div className="custom-scrollbar space-y-6 overflow-y-auto p-6">
-      {activeProject && (
+      {(activeProject || periodLabel) && (
         <p className="text-xs font-medium text-[var(--muted)]">
-          Showing{" "}
-          <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-            {activeProject.name}
-          </span>{" "}
-          only
+          {periodLabel && (
+            <>
+              Showing{" "}
+              <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                {periodLabel}
+              </span>
+            </>
+          )}
+          {periodLabel && activeProject ? " · " : null}
+          {activeProject && (
+            <>
+              {periodLabel ? null : "Showing "}
+              <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                {activeProject.name}
+              </span>{" "}
+              only
+            </>
+          )}
         </p>
       )}
       <KpiGrid totals={stats.totals} dueTasks={stats.dueTasks} />
@@ -57,6 +73,8 @@ export function DashboardGrid({ stats }: DashboardGridProps) {
         recentActivity={stats.recentActivity}
         weeklyCompleted={stats.weeklyCompleted}
         range={stats.range}
+        from={stats.from}
+        to={stats.to}
       />
     </div>
   );

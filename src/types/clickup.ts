@@ -62,6 +62,7 @@ export interface ClickUpTask {
   priority?: ClickUpPriority | null;
   due_date?: string | null;
   start_date?: string | null;
+  date_created?: string | null;
   date_updated?: string | null;
   date_closed?: string | null;
   date_done?: string | null;

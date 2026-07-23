@@ -20,7 +20,9 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const range = parseRange(searchParams.get("range"));
     const listId = searchParams.get("listId") || null;
-    const stats = await buildDashboardStats(teamId, range, listId);
+    const from = searchParams.get("from") || null;
+    const to = searchParams.get("to") || null;
+    const stats = await buildDashboardStats(teamId, range, listId, from, to);
     return Response.json(stats);
   } catch (error) {
     return clickupErrorResponse(error);

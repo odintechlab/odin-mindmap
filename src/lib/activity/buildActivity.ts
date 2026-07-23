@@ -10,6 +10,8 @@ import type { DashboardDateRange } from "@/types/dashboard";
 import type { ActivityEvent, ActivityStats } from "@/types/activity";
 
 const PAGE_LIMIT = 80;
+/** Treat date_updated near closedAt as the completion itself, not a separate edit. */
+const COMPLETION_UPDATE_WINDOW_MS = 60_000;
 
 function dayLabel(ts: number): string {
   return new Date(ts).toLocaleDateString("en-US", {
@@ -35,7 +37,33 @@ export async function buildActivityStats(
 
   for (const task of tasks) {
     const updated = parseTimestamp(task.date_updated);
-    if (updated !== null && updated >= rangeStart) {
+    const isClosed = task.status.type === "closed";
+    const closedAt = isClosed ? getClosedAt(task) : null;
+    const hasCompletedInRange =
+      closedAt !== null && closedAt >= rangeStart;
+
+    if (hasCompletedInRange) {
+      events.push({
+        id: `${task.id}-completed`,
+        kind: "completed",
+        task: toTaskSummary(task),
+        at: String(closedAt),
+        dayLabel: dayLabel(closedAt),
+      });
+    }
+
+    // Skip Updated when it is the same completion bump; keep it for a
+    // clear post-completion edit (updated meaningfully after closedAt).
+    const isPostCompletionEdit =
+      hasCompletedInRange &&
+      updated !== null &&
+      updated > closedAt + COMPLETION_UPDATE_WINDOW_MS;
+
+    if (
+      updated !== null &&
+      updated >= rangeStart &&
+      (!hasCompletedInRange || isPostCompletionEdit)
+    ) {
       events.push({
         id: `${task.id}-updated`,
         kind: "updated",
@@ -43,19 +71,6 @@ export async function buildActivityStats(
         at: task.date_updated ?? "",
         dayLabel: dayLabel(updated),
       });
-    }
-
-    if (task.status.type === "closed") {
-      const closedAt = getClosedAt(task);
-      if (closedAt >= rangeStart) {
-        events.push({
-          id: `${task.id}-completed`,
-          kind: "completed",
-          task: toTaskSummary(task),
-          at: String(closedAt),
-          dayLabel: dayLabel(closedAt),
-        });
-      }
     }
   }
 

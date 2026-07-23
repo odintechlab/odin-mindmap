@@ -6,23 +6,22 @@ import {
   buildWeeklyCompleted,
   extractProjects,
   getClosedAt,
+  isFinishedStatus,
+  parseAbsoluteDateRange,
   parseRangeDays,
   parseTimestamp,
+  taskInAbsoluteRange,
   toAssignee,
   toTaskSummary,
 } from "@/lib/dashboard/taskMetrics";
 import { mapWithConcurrency } from "@/lib/utils/concurrency";
 import type {
-  DashboardAssignee,
   DashboardDateRange,
   DashboardForecast,
   DashboardGoal,
   DashboardMilestone,
   DashboardMilestoneForecast,
-  DashboardMemberWorkload,
-  DashboardProject,
   DashboardStats,
-  DashboardTaskSummary,
 } from "@/types/dashboard";
 import type { ClickUpTask } from "@/types/clickup";
 
@@ -31,14 +30,18 @@ const RECENT_LIMIT = 15;
 const VELOCITY_WINDOW_WEEKS = 4;
 const MILESTONE_GRACE_MS = 3 * 86_400_000;
 
-// KPI totals use all-time task data; recent activity sections respect ?range=.
+// KPI totals + team workload: all-time by default; optional absolute from/to filters them.
+// Recent activity: relative ?range= unless from/to is set (then that window).
 // Optional ?listId= filters all task-derived sections to one ClickUp list (project).
+// Forecast / milestones / goals stay all-time (within list scope) — ambiguous under absolute range.
 // Forecast: velocity from last 4 weeks of completions (not completion rate);
 // ETA = (open + inProgress) / velocity — task-count based, not story points.
 export async function buildDashboardStats(
   teamId: string,
   range: DashboardDateRange = "30d",
   listId: string | null = null,
+  from: string | null = null,
+  to: string | null = null,
 ): Promise<DashboardStats> {
   const members = await getMembers(teamId);
 
@@ -62,12 +65,22 @@ export async function buildDashboardStats(
 
   const allTasks = [...taskMap.values()];
   const projects = extractProjects(allTasks);
-  const tasks = listId
+  const listTasks = listId
     ? allTasks.filter((t) => t.list?.id === listId)
     : allTasks;
+
+  const absoluteRange = parseAbsoluteDateRange(from, to);
+  const kpiTasks = absoluteRange
+    ? listTasks.filter((t) =>
+        taskInAbsoluteRange(t, absoluteRange.fromMs, absoluteRange.toMs),
+      )
+    : listTasks;
+
   const now = Date.now();
   const rangeMs = parseRangeDays(range) * 86_400_000;
-  const rangeStart = now - rangeMs;
+  const relativeStart = now - rangeMs;
+  const activityStart = absoluteRange ? absoluteRange.fromMs : relativeStart;
+  const activityEnd = absoluteRange ? absoluteRange.toMs : Number.POSITIVE_INFINITY;
   const weekEnd = now + 7 * 86_400_000;
 
   let open = 0;
@@ -78,7 +91,7 @@ export async function buildDashboardStats(
   let collabTasks = 0;
   const activeAssigneeIds = new Set<number>();
 
-  for (const task of tasks) {
+  for (const task of kpiTasks) {
     const type = task.status.type;
     if (type === "closed") {
       closed++;
@@ -89,7 +102,7 @@ export async function buildDashboardStats(
     }
 
     const due = parseTimestamp(task.due_date);
-    if (due && type !== "closed") {
+    if (due && !isFinishedStatus(type)) {
       if (due < now) overdue++;
       else if (due <= weekEnd) dueThisWeek++;
     }
@@ -105,20 +118,23 @@ export async function buildDashboardStats(
     }
   }
 
-  const total = tasks.length;
+  const total = kpiTasks.length;
   const completionRate = total > 0 ? Math.round((closed / total) * 100) : 0;
 
+  // Milestones / goals / forecast use list-scoped all-time tasks (not absolute range).
   const milestones = buildMilestones(
-    tasks.filter((t) => t.custom_item_id === 1),
+    listTasks.filter((t) => t.custom_item_id === 1),
     now,
   );
 
   const dashboardGoals = listId ? [] : buildGoals(goals);
 
-  const recentUpdated = tasks
+  const recentUpdated = listTasks
     .filter((t) => {
       const updated = parseTimestamp(t.date_updated);
-      return updated !== null && updated >= rangeStart;
+      return (
+        updated !== null && updated >= activityStart && updated <= activityEnd
+      );
     })
     .sort(
       (a, b) =>
@@ -128,25 +144,29 @@ export async function buildDashboardStats(
     .slice(0, RECENT_LIMIT)
     .map(toTaskSummary);
 
-  const recentCompleted = tasks
+  const recentCompleted = listTasks
     .filter((t) => t.status.type === "closed")
     .filter((t) => {
       const closedAt =
         parseTimestamp(t.date_closed) ??
         parseTimestamp(t.date_done) ??
         parseTimestamp(t.date_updated);
-      return closedAt !== null && closedAt >= rangeStart;
+      return (
+        closedAt !== null &&
+        closedAt >= activityStart &&
+        closedAt <= activityEnd
+      );
     })
     .sort((a, b) => getClosedAt(b) - getClosedAt(a))
     .slice(0, RECENT_LIMIT)
     .map(toTaskSummary);
 
-  const weeklyCompleted = buildWeeklyCompleted(tasks, now);
+  const weeklyCompleted = buildWeeklyCompleted(listTasks, now);
 
-  const overdueTasks = tasks
+  const overdueTasks = kpiTasks
     .filter((t) => {
       const due = parseTimestamp(t.due_date);
-      return due !== null && t.status.type !== "closed" && due < now;
+      return due !== null && !isFinishedStatus(t.status.type) && due < now;
     })
     .sort(
       (a, b) =>
@@ -154,12 +174,12 @@ export async function buildDashboardStats(
     )
     .map(toTaskSummary);
 
-  const dueThisWeekTasks = tasks
+  const dueThisWeekTasks = kpiTasks
     .filter((t) => {
       const due = parseTimestamp(t.due_date);
       return (
         due !== null &&
-        t.status.type !== "closed" &&
+        !isFinishedStatus(t.status.type) &&
         due >= now &&
         due <= weekEnd
       );
@@ -170,13 +190,25 @@ export async function buildDashboardStats(
     )
     .map(toTaskSummary);
 
-  const forecast = buildForecast(open, inProgress, weeklyCompleted, now);
+  const allTimeOpen = listTasks.filter((t) => t.status.type !== "closed" && t.status.type !== "custom").length;
+  const allTimeInProgress = listTasks.filter((t) => t.status.type === "custom").length;
+  const forecast = buildForecast(allTimeOpen, allTimeInProgress, weeklyCompleted, now);
   const nextMilestoneForecast = buildMilestoneForecast(milestones, forecast);
-  const teamWorkload = buildTeamWorkload(members, memberTasks, listId);
+
+  const memberTasksForWorkload = absoluteRange
+    ? memberTasks.map((tasks) =>
+        tasks.filter((t) =>
+          taskInAbsoluteRange(t, absoluteRange.fromMs, absoluteRange.toMs),
+        ),
+      )
+    : memberTasks;
+  const teamWorkload = buildTeamWorkload(members, memberTasksForWorkload, listId);
 
   return {
     generatedAt: new Date().toISOString(),
     range,
+    from: absoluteRange?.from ?? null,
+    to: absoluteRange?.to ?? null,
     listId,
     projects,
     totals: {
@@ -317,12 +349,12 @@ function buildMilestones(
 ): DashboardMilestone[] {
   return milestoneTasks
     .map((task): DashboardMilestone => {
-      const isClosed = task.status.type === "closed";
+      const isFinished = isFinishedStatus(task.status.type);
       const due = parseTimestamp(task.due_date);
-      const isOverdue = !isClosed && due !== null && due < now;
+      const isOverdue = !isFinished && due !== null && due < now;
 
       let group: DashboardMilestone["group"];
-      if (isClosed) {
+      if (isFinished) {
         group = "completed";
       } else if (isOverdue) {
         group = "overdue";

@@ -4,9 +4,15 @@ export async function fetchDashboardStats(
   teamId: string,
   range: DashboardDateRange = "30d",
   listId?: string | null,
+  from?: string | null,
+  to?: string | null,
 ): Promise<DashboardStats> {
   const params = new URLSearchParams({ range });
   if (listId) params.set("listId", listId);
+  if (from && to) {
+    params.set("from", from);
+    params.set("to", to);
+  }
   const res = await fetch(`/api/dashboard/${teamId}?${params}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

@@ -9,6 +9,12 @@ import {
 } from "@/components/layout/AppHeader";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import {
+  ALL_TIME_RANGE,
+  DateRangeDropdown,
+  type DateRangeSelection,
+} from "@/components/dashboard/DateRangeDropdown";
+import { ExportPdfButton } from "@/components/dashboard/ExportPdfButton";
 import { Button } from "@/components/ui/Button";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { usePersistedWorkspace } from "@/hooks/usePersistedWorkspace";
@@ -35,11 +41,17 @@ function IconMoon() {
 function DashboardContent({
   teamId,
   listId,
+  from,
+  to,
   onProjectsLoaded,
+  onStatsLoaded,
 }: {
   teamId: string;
   listId: string | null;
+  from: string;
+  to: string;
   onProjectsLoaded: (projects: DashboardProject[]) => void;
+  onStatsLoaded: (stats: DashboardStats | null) => void;
 }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,18 +61,24 @@ function DashboardContent({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    onStatsLoaded(null);
 
-    fetchDashboardStats(teamId, "30d", listId)
+    const rangeFrom = from && to ? from : null;
+    const rangeTo = from && to ? to : null;
+
+    fetchDashboardStats(teamId, "30d", listId, rangeFrom, rangeTo)
       .then((data) => {
         if (!cancelled) {
           setStats(data);
           onProjectsLoaded(data.projects);
+          onStatsLoaded(data);
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load dashboard");
           setStats(null);
+          onStatsLoaded(null);
         }
       })
       .finally(() => {
@@ -70,7 +88,7 @@ function DashboardContent({
     return () => {
       cancelled = true;
     };
-  }, [teamId, listId, onProjectsLoaded]);
+  }, [teamId, listId, from, to, onProjectsLoaded, onStatsLoaded]);
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -106,12 +124,19 @@ export default function DashboardPage() {
   const { workspaces, loading: wsLoading, activeTeamId, setTeamId } = usePersistedWorkspace();
   const [listId, setListId] = useState<string | null>(null);
   const [projects, setProjects] = useState<DashboardProject[]>([]);
+  const [dateRange, setDateRange] = useState<DateRangeSelection>(ALL_TIME_RANGE);
+  const [exportStats, setExportStats] = useState<DashboardStats | null>(null);
 
   const handleTeamChange = (id: string) => {
     setTeamId(id);
     setListId(null);
     setProjects([]);
+    setExportStats(null);
   };
+
+  const projectName = listId
+    ? projects.find((p) => p.id === listId)?.name ?? null
+    : null;
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -150,12 +175,23 @@ export default function DashboardPage() {
                 ))}
               </select>
             </HeaderControl>
+
+            <HeaderControl label="Period" grouped>
+              <DateRangeDropdown value={dateRange} onChange={setDateRange} />
+            </HeaderControl>
           </HeaderContextGroup>
         }
         actions={
-          <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
-            {theme === "dark" ? <IconSun /> : <IconMoon />}
-          </Button>
+          <>
+            <ExportPdfButton
+              stats={exportStats}
+              projectName={projectName}
+              disabled={!exportStats}
+            />
+            <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
+              {theme === "dark" ? <IconSun /> : <IconMoon />}
+            </Button>
+          </>
         }
       />
 
@@ -164,7 +200,10 @@ export default function DashboardPage() {
           <DashboardContent
             teamId={activeTeamId}
             listId={listId}
+            from={dateRange.from}
+            to={dateRange.to}
             onProjectsLoaded={setProjects}
+            onStatsLoaded={setExportStats}
           />
         ) : (
           <div className="flex h-full items-center justify-center">

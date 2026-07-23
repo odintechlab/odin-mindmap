@@ -16,6 +16,84 @@ export function parseTimestamp(ts?: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export interface AbsoluteDateRange {
+  from: string;
+  to: string;
+  fromMs: number;
+  toMs: number;
+}
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateBoundary(
+  value: string,
+  edge: "start" | "end",
+): number | null {
+  const trimmed = value.trim();
+  if (ISO_DATE_RE.test(trimmed)) {
+    const [y, m, d] = trimmed.split("-").map(Number);
+    const date =
+      edge === "start"
+        ? new Date(y, m - 1, d, 0, 0, 0, 0)
+        : new Date(y, m - 1, d, 23, 59, 59, 999);
+    const ms = date.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/** Parse optional from/to. Invalid or incomplete pairs return null (all-time). */
+export function parseAbsoluteDateRange(
+  from?: string | null,
+  to?: string | null,
+): AbsoluteDateRange | null {
+  if (!from?.trim() || !to?.trim()) return null;
+  const fromMs = parseDateBoundary(from, "start");
+  const toMs = parseDateBoundary(to, "end");
+  if (fromMs === null || toMs === null || fromMs > toMs) return null;
+
+  const toIso = (ms: number) => {
+    const d = new Date(ms);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  return {
+    from: ISO_DATE_RE.test(from.trim()) ? from.trim() : toIso(fromMs),
+    to: ISO_DATE_RE.test(to.trim()) ? to.trim() : toIso(toMs),
+    fromMs,
+    toMs,
+  };
+}
+
+/**
+ * Include a task in an absolute dashboard window if it was:
+ * - created in range, or
+ * - closed in range, or
+ * - still open and updated in range.
+ */
+export function taskInAbsoluteRange(
+  task: ClickUpTask,
+  fromMs: number,
+  toMs: number,
+): boolean {
+  const inWindow = (ms: number | null) =>
+    ms !== null && ms >= fromMs && ms <= toMs;
+
+  if (inWindow(parseTimestamp(task.date_created))) return true;
+
+  if (task.status.type === "closed") {
+    const closedAt = getClosedAt(task);
+    return closedAt > 0 && closedAt >= fromMs && closedAt <= toMs;
+  }
+
+  return inWindow(parseTimestamp(task.date_updated));
+}
+
 export function getClosedAt(task: ClickUpTask): number {
   return (
     parseTimestamp(task.date_closed) ??
@@ -23,6 +101,11 @@ export function getClosedAt(task: ClickUpTask): number {
     parseTimestamp(task.date_updated) ??
     0
   );
+}
+
+/** ClickUp Done + Closed — finished work is not overdue. */
+export function isFinishedStatus(type: string): boolean {
+  return type === "closed" || type === "done";
 }
 
 export function toAssignee(user: ClickUpUser): DashboardAssignee {
@@ -96,7 +179,7 @@ export function countTaskBuckets(
     }
 
     const due = parseTimestamp(task.due_date);
-    if (due && type !== "closed" && due < now) {
+    if (due && !isFinishedStatus(type) && due < now) {
       overdue++;
     }
   }

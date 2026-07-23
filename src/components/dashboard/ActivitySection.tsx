@@ -1,6 +1,7 @@
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { formatRelativeTime } from "@/lib/dashboard/api";
+import { formatRangeLabel } from "./DateRangeDropdown";
 import type { DashboardStats, DashboardTaskSummary } from "@/types/dashboard";
 
 function TaskRow({ task }: { task: DashboardTaskSummary }) {
@@ -76,21 +77,28 @@ interface ActivitySectionProps {
   recentActivity: DashboardStats["recentActivity"];
   weeklyCompleted: DashboardStats["weeklyCompleted"];
   range: DashboardStats["range"];
+  from?: string | null;
+  to?: string | null;
 }
 
 export function ActivitySection({
   recentActivity,
   weeklyCompleted,
   range,
+  from,
+  to,
 }: ActivitySectionProps) {
+  const periodLabel =
+    from && to
+      ? formatRangeLabel(from, to)
+      : `Last ${range.replace("d", " days")}`;
+
   return (
     <section className="glass-strong rounded-2xl border border-[var(--border)] p-5 shadow-surface">
       <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
         Recent activity
       </h2>
-      <p className="mt-0.5 text-xs text-[var(--muted)]">
-        Last {range.replace("d", " days")}
-      </p>
+      <p className="mt-0.5 text-xs text-[var(--muted)]">{periodLabel}</p>
 
       <WeeklySparkline data={weeklyCompleted} />
 
