@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { Avatar } from "@/components/ui/Avatar";
-import type { DashboardMemberWorkload } from "@/types/dashboard";
+import type {
+  DashboardMemberWorkload,
+  DashboardTaskSummary,
+} from "@/types/dashboard";
 
 function ProgressRing({ pct }: { pct: number }) {
   const size = 52;
@@ -61,12 +64,32 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+function TaskList({ tasks }: { tasks: DashboardTaskSummary[] }) {
+  return (
+    <ul className="mb-2 space-y-0.5 pl-5">
+      {tasks.map((task) => (
+        <li key={task.id}>
+          <a
+            href={task.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block truncate rounded-md px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--panel-solid)] hover:text-zinc-800 dark:hover:text-zinc-100"
+          >
+            {task.name}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 interface MemberCapacityCardProps {
   member: DashboardMemberWorkload;
 }
 
 export function MemberCapacityCard({ member }: MemberCapacityCardProps) {
   const [expandedStatus, setExpandedStatus] = useState<string | null>(null);
+  const [doneOpen, setDoneOpen] = useState(false);
 
   const toggleStatus = (label: string) => {
     setExpandedStatus((prev) => (prev === label ? null : label));
@@ -94,17 +117,45 @@ export function MemberCapacityCard({ member }: MemberCapacityCardProps) {
               </p>
             </div>
             <div>
-              <p className="text-lg font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
-                {member.done}
-              </p>
-              <p className="text-[10px] font-medium text-[var(--muted)]">
-                Done
-              </p>
+              {member.done > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setDoneOpen((v) => !v)}
+                  className="group text-left"
+                  aria-expanded={doneOpen}
+                >
+                  <p className="text-lg font-bold tabular-nums text-zinc-800 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                    {member.done}
+                  </p>
+                  <p className="flex items-center gap-1 text-[10px] font-medium text-[var(--muted)] group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                    Done
+                    <Chevron open={doneOpen} />
+                  </p>
+                </button>
+              ) : (
+                <>
+                  <p className="text-lg font-bold tabular-nums text-zinc-800 dark:text-zinc-100">
+                    {member.done}
+                  </p>
+                  <p className="text-[10px] font-medium text-[var(--muted)]">
+                    Done
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </div>
         <ProgressRing pct={member.completionPct} />
       </div>
+
+      {doneOpen && member.doneTasks.length > 0 && (
+        <div className="mt-3 border-t border-[var(--border)] pt-2">
+          <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+            Done tasks
+          </p>
+          <TaskList tasks={member.doneTasks} />
+        </div>
+      )}
 
       {member.notDone > 0 && member.byStatus.length > 0 && (
         <>
@@ -144,22 +195,7 @@ export function MemberCapacityCard({ member }: MemberCapacityCardProps) {
                       ({status.count})
                     </span>
                   </button>
-                  {isOpen && (
-                    <ul className="mb-2 space-y-0.5 pl-5">
-                      {status.tasks.map((task) => (
-                        <li key={task.id}>
-                          <a
-                            href={task.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block truncate rounded-md px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--panel-solid)] hover:text-zinc-800 dark:hover:text-zinc-100"
-                          >
-                            {task.name}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  {isOpen && <TaskList tasks={status.tasks} />}
                 </li>
               );
             })}

@@ -80,6 +80,7 @@ export interface DashboardMemberWorkload {
   notDone: number;
   completionPct: number;
   byStatus: DashboardMemberStatusGroup[];
+  doneTasks: DashboardTaskSummary[];
 }
 
 export interface DashboardStats {

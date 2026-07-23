@@ -16,6 +16,7 @@ export function buildTeamWorkload(
 
       let done = 0;
       let notDone = 0;
+      const doneTaskList: ClickUpTask[] = [];
       const statusMap = new Map<
         string,
         { label: string; color: string; tasks: ClickUpTask[] }
@@ -24,6 +25,7 @@ export function buildTeamWorkload(
       for (const task of tasks) {
         if (isFinishedStatus(task.status.type)) {
           done++;
+          doneTaskList.push(task);
         } else {
           notDone++;
           const key = task.status.status;
@@ -61,6 +63,7 @@ export function buildTeamWorkload(
         notDone,
         completionPct: total > 0 ? Math.round((done / total) * 100) : 0,
         byStatus,
+        doneTasks: doneTaskList.map(toTaskSummary),
       };
     })
     .filter((m) => m.done + m.notDone > 0)

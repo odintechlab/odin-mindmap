@@ -59,6 +59,38 @@ describe("taskInAbsoluteRange", () => {
     expect(taskInAbsoluteRange(t, fromMs, toMs)).toBe(true);
   });
 
+  it("includes done-type tasks finished in range via date_done", () => {
+    const t = task({
+      id: "done-in-range",
+      status: { id: "1", status: "complete", color: "#0f0", orderindex: 0, type: "done" },
+      date_created: String(new Date(2025, 0, 1).getTime()),
+      date_done: String(new Date(2026, 2, 1).getTime()),
+      date_updated: String(new Date(2026, 7, 1).getTime()),
+    });
+    expect(taskInAbsoluteRange(t, fromMs, toMs)).toBe(true);
+  });
+
+  it("includes open tasks created before the range with no start/due", () => {
+    const t = task({
+      id: "open-old",
+      status: { id: "1", status: "open", color: "#000", orderindex: 0, type: "open" },
+      date_created: String(new Date(2025, 6, 1).getTime()),
+      date_updated: String(new Date(2025, 8, 1).getTime()),
+    });
+    expect(taskInAbsoluteRange(t, fromMs, toMs)).toBe(true);
+  });
+
+  it("includes tasks with due date in range when created earlier", () => {
+    const t = task({
+      id: "due-in-range",
+      status: { id: "1", status: "open", color: "#000", orderindex: 0, type: "open" },
+      date_created: String(new Date(2024, 0, 1).getTime()),
+      date_updated: String(new Date(2024, 0, 2).getTime()),
+      due_date: String(new Date(2026, 3, 15).getTime()),
+    });
+    expect(taskInAbsoluteRange(t, fromMs, toMs)).toBe(true);
+  });
+
   it("includes open tasks updated in range", () => {
     const t = task({
       id: "c",
