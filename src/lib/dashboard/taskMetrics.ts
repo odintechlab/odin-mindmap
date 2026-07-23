@@ -72,9 +72,11 @@ export function parseAbsoluteDateRange(
 
 /**
  * Include a task in an absolute dashboard window if it was:
- * - created in range, or
- * - closed in range, or
- * - still open and updated in range.
+ * - created in range (always checked — even when start/due are empty),
+ * - scheduled (start or due) in range when those dates exist,
+ * - finished (done/closed) in range, or
+ * - still open and created on/before the range end (existed during the period),
+ * - or still open and updated in range.
  */
 export function taskInAbsoluteRange(
   task: ClickUpTask,
@@ -84,13 +86,20 @@ export function taskInAbsoluteRange(
   const inWindow = (ms: number | null) =>
     ms !== null && ms >= fromMs && ms <= toMs;
 
-  if (inWindow(parseTimestamp(task.date_created))) return true;
+  const created = parseTimestamp(task.date_created);
+  if (inWindow(created)) return true;
 
-  if (task.status.type === "closed") {
+  if (inWindow(parseTimestamp(task.start_date))) return true;
+  if (inWindow(parseTimestamp(task.due_date))) return true;
+
+  if (isFinishedStatus(task.status.type)) {
     const closedAt = getClosedAt(task);
     return closedAt > 0 && closedAt >= fromMs && closedAt <= toMs;
   }
 
+  // Open work: count if it existed by the end of the period (no start/due needed),
+  // or was touched during the period.
+  if (created !== null && created <= toMs) return true;
   return inWindow(parseTimestamp(task.date_updated));
 }
 
