@@ -2,6 +2,7 @@ import {
   buildWeeklyCompleted,
   computeVelocityPerWeek,
   countTaskBuckets,
+  isFinishedStatus,
   parseTimestamp,
   toTaskSummary,
 } from "@/lib/dashboard/taskMetrics";
@@ -53,7 +54,7 @@ export async function buildPortfolioStats(
   const overdueByPerson = new Map<number, PortfolioPersonOverdue>();
   for (const task of tasks) {
     const due = parseTimestamp(task.due_date);
-    if (!due || task.status.type === "closed" || due >= now) continue;
+    if (!due || isFinishedStatus(task.status.type) || due >= now) continue;
     for (const a of task.assignees) {
       const existing = overdueByPerson.get(a.id);
       if (existing) {

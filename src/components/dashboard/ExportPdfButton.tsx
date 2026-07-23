@@ -20,6 +20,7 @@ export function ExportPdfButton({
   disabled,
 }: ExportPdfButtonProps) {
   const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -33,14 +34,17 @@ export function ExportPdfButton({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const runExport = (locale: ExportLocale) => {
-    if (!stats) return;
+  const runExport = async (locale: ExportLocale) => {
+    if (!stats || exporting) return;
     setError(null);
+    setExporting(true);
     try {
-      exportDashboardPdf(stats, locale, { projectName });
+      await exportDashboardPdf(stats, locale, { projectName });
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -48,7 +52,7 @@ export function ExportPdfButton({
     <div ref={ref} className="relative">
       <button
         type="button"
-        disabled={disabled || !stats}
+        disabled={disabled || !stats || exporting}
         onClick={() => setOpen((v) => !v)}
         className={`${headerDropdownTriggerClass} disabled:opacity-50`}
         aria-haspopup="true"
@@ -69,7 +73,7 @@ export function ExportPdfButton({
         >
           <path d="M3.5 9.5v2h7v-2M7 1.5v7M4.5 6.5L7 9l2.5-2.5" />
         </svg>
-        <span>Export</span>
+        <span>{exporting ? "Exporting…" : "Export"}</span>
         <svg
           width="12"
           height="12"
@@ -99,8 +103,9 @@ export function ExportPdfButton({
             <button
               key={opt.locale}
               type="button"
+              disabled={exporting}
               onClick={() => runExport(opt.locale)}
-              className="flex w-full items-center rounded-lg px-2.5 py-2 text-left text-xs font-medium text-zinc-700 transition-colors hover:!bg-black/[0.04] dark:text-zinc-200 dark:hover:!bg-white/[0.06]"
+              className="flex w-full items-center rounded-lg px-2.5 py-2 text-left text-xs font-medium text-zinc-700 transition-colors hover:!bg-black/[0.04] disabled:opacity-50 dark:text-zinc-200 dark:hover:!bg-white/[0.06]"
             >
               {opt.label}
             </button>

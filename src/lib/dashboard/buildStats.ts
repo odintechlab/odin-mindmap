@@ -6,6 +6,7 @@ import {
   buildWeeklyCompleted,
   extractProjects,
   getClosedAt,
+  isFinishedStatus,
   parseAbsoluteDateRange,
   parseRangeDays,
   parseTimestamp,
@@ -101,7 +102,7 @@ export async function buildDashboardStats(
     }
 
     const due = parseTimestamp(task.due_date);
-    if (due && type !== "closed") {
+    if (due && !isFinishedStatus(type)) {
       if (due < now) overdue++;
       else if (due <= weekEnd) dueThisWeek++;
     }
@@ -165,7 +166,7 @@ export async function buildDashboardStats(
   const overdueTasks = kpiTasks
     .filter((t) => {
       const due = parseTimestamp(t.due_date);
-      return due !== null && t.status.type !== "closed" && due < now;
+      return due !== null && !isFinishedStatus(t.status.type) && due < now;
     })
     .sort(
       (a, b) =>
@@ -178,7 +179,7 @@ export async function buildDashboardStats(
       const due = parseTimestamp(t.due_date);
       return (
         due !== null &&
-        t.status.type !== "closed" &&
+        !isFinishedStatus(t.status.type) &&
         due >= now &&
         due <= weekEnd
       );
@@ -348,12 +349,12 @@ function buildMilestones(
 ): DashboardMilestone[] {
   return milestoneTasks
     .map((task): DashboardMilestone => {
-      const isClosed = task.status.type === "closed";
+      const isFinished = isFinishedStatus(task.status.type);
       const due = parseTimestamp(task.due_date);
-      const isOverdue = !isClosed && due !== null && due < now;
+      const isOverdue = !isFinished && due !== null && due < now;
 
       let group: DashboardMilestone["group"];
-      if (isClosed) {
+      if (isFinished) {
         group = "completed";
       } else if (isOverdue) {
         group = "overdue";

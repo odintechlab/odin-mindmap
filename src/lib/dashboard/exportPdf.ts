@@ -1,4 +1,5 @@
 import type { DashboardStats } from "@/types/dashboard";
+import type { Content, TDocumentDefinitions, TableCell } from "pdfmake/interfaces";
 
 export type ExportLocale = "en" | "mn";
 
@@ -66,7 +67,6 @@ type Copy = {
   task: string;
   list: string;
   footer: string;
-  printHint: string;
 };
 
 const COPY: Record<ExportLocale, Copy> = {
@@ -110,7 +110,6 @@ const COPY: Record<ExportLocale, Copy> = {
     task: "Task",
     list: "List",
     footer: "Confidential — generated from Odin Mindmap",
-    printHint: "Use your browser’s print dialog and choose “Save as PDF”.",
   },
   mn: {
     title: "Хяналтын самбарын тайлан",
@@ -152,17 +151,8 @@ const COPY: Record<ExportLocale, Copy> = {
     task: "Даалгавар",
     list: "Жагсаалт",
     footer: "Нууцлалтай — Odin Mindmap-аас үүсгэсэн",
-    printHint: "Хэвлэх цонхноос “PDF болгон хадгалах”-ыг сонгоно уу.",
   },
 };
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 function formatDate(isoOrMs: string | null | undefined, locale: ExportLocale): string {
   if (!isoOrMs) return "—";
@@ -188,66 +178,85 @@ function confidenceLabel(
   return t.none;
 }
 
-function buildReportHtml(
+function sectionHeading(text: string): Content {
+  return {
+    text: text.toUpperCase(),
+    style: "section",
+    margin: [0, 16, 0, 8],
+  };
+}
+
+function kpiGrid(items: Array<[string, string]>, columnsPerRow = 3): Content {
+  const columns = items.map(([label, value]) => ({
+    width: "*" as const,
+    stack: [
+      { text: label.toUpperCase(), style: "kpiLabel" },
+      { text: value, style: "kpiValue", margin: [0, 2, 0, 0] as [number, number, number, number] },
+    ],
+    style: "kpiBox",
+  }));
+
+  const rows: Content[] = [];
+  for (let i = 0; i < columns.length; i += columnsPerRow) {
+    rows.push({
+      columns: columns.slice(i, i + columnsPerRow),
+      columnGap: 8,
+      margin: [0, 0, 0, 8],
+    });
+  }
+  return { stack: rows };
+}
+
+function table(
+  headers: string[],
+  rows: string[][],
+  widths: Array<number | "*" | "auto">,
+  rightAlignFrom = 1,
+): Content {
+  const head: TableCell[] = headers.map((h, i) => ({
+    text: h.toUpperCase(),
+    style: "th",
+    alignment: i >= rightAlignFrom ? "right" : "left",
+  }));
+  const body: TableCell[][] = [
+    head,
+    ...rows.map((row) =>
+      row.map((cell, i) => ({
+        text: cell,
+        style: "td",
+        alignment: (i >= rightAlignFrom ? "right" : "left") as "left" | "right",
+      })),
+    ),
+  ];
+  return {
+    table: {
+      headerRows: 1,
+      widths,
+      body,
+    },
+    layout: {
+      hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length ? 0.6 : 0.4),
+      vLineWidth: () => 0,
+      hLineColor: () => "#e4e4e7",
+      paddingLeft: () => 4,
+      paddingRight: () => 4,
+      paddingTop: () => 5,
+      paddingBottom: () => 5,
+    },
+  };
+}
+
+function buildDocDefinition(
   stats: DashboardStats,
   locale: ExportLocale,
   options?: { projectName?: string | null },
-): string {
+): TDocumentDefinitions {
   const t = COPY[locale];
   const period =
     stats.from && stats.to ? formatRangeLabel(stats.from, stats.to) : t.allTime;
   const project = options?.projectName ?? t.allProjects;
   const { totals, forecast, teamWorkload, milestones, goals, recentActivity } =
     stats;
-
-  const kpiRows = [
-    [t.totalTasks, String(totals.total)],
-    [t.open, String(totals.open)],
-    [t.inProgress, String(totals.inProgress)],
-    [t.closed, String(totals.closed)],
-    [t.completionRate, `${totals.completionRate}%`],
-    [t.overdue, String(totals.overdue)],
-    [t.dueThisWeek, String(totals.dueThisWeek)],
-    [t.collaborators, String(totals.activeCollaborators)],
-    [t.collabTasks, String(totals.collabTasks)],
-  ]
-    .map(
-      ([label, value]) =>
-        `<div class="kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${escapeHtml(value)}</div></div>`,
-    )
-    .join("");
-
-  const workloadRows = teamWorkload
-    .slice(0, 25)
-    .map(
-      (m) =>
-        `<tr><td>${escapeHtml(m.name)}</td><td class="num">${m.done}</td><td class="num">${m.notDone}</td><td class="num">${m.completionPct}%</td></tr>`,
-    )
-    .join("");
-
-  const milestoneRows = milestones
-    .slice(0, 20)
-    .map(
-      (m) =>
-        `<tr><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.status.label)}</td><td>${escapeHtml(formatDate(m.dueDate, locale))}</td></tr>`,
-    )
-    .join("");
-
-  const goalRows = goals
-    .slice(0, 15)
-    .map(
-      (g) =>
-        `<tr><td>${escapeHtml(g.name)}</td><td class="num">${Math.round(g.percentComplete)}%</td></tr>`,
-    )
-    .join("");
-
-  const completedRows = recentActivity.completed
-    .slice(0, 15)
-    .map(
-      (task) =>
-        `<tr><td>${escapeHtml(task.name)}</td><td>${escapeHtml(task.listName ?? "—")}</td></tr>`,
-    )
-    .join("");
 
   const eta =
     forecast.estimatedCompletion
@@ -258,180 +267,230 @@ function buildReportHtml(
       ? `${forecast.velocityPerWeek}${t.perWeek}`
       : "—";
 
-  return `<!DOCTYPE html>
-<html lang="${locale === "mn" ? "mn" : "en"}">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(t.title)} — ${escapeHtml(period)}</title>
-  <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 36px 40px 48px;
-      font-family: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", "Noto Sans Mongolian", sans-serif;
-      color: #18181b;
-      background: #fff;
-      font-size: 12px;
-      line-height: 1.45;
-    }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 24px;
-      border-bottom: 2px solid #312e81;
-      padding-bottom: 16px;
-      margin-bottom: 22px;
-    }
-    .brand { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #6366f1; font-weight: 700; }
-    h1 { margin: 4px 0 0; font-size: 22px; letter-spacing: -0.02em; }
-    .meta { text-align: right; color: #52525b; font-size: 11px; }
-    .meta strong { color: #18181b; font-weight: 600; }
-    h2 {
-      margin: 22px 0 10px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: #4338ca;
-      border-bottom: 1px solid #e4e4e7;
-      padding-bottom: 6px;
-    }
-    .kpis {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-    .kpi {
-      border: 1px solid #e4e4e7;
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: #fafafa;
-    }
-    .kpi-label { color: #71717a; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
-    .kpi-value { margin-top: 4px; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
-    .forecast {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-    }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 7px 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
-    th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #71717a; font-weight: 600; }
-    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    .hint { margin-top: 8px; color: #a1a1aa; font-size: 10px; }
-    .footer {
-      margin-top: 28px;
-      padding-top: 12px;
-      border-top: 1px solid #e4e4e7;
-      color: #71717a;
-      font-size: 10px;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    @media print {
-      body { padding: 18px 20px; }
-      .hint { display: none; }
-      .kpi, .header, table { break-inside: avoid; }
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div>
-      <div class="brand">${escapeHtml(t.subtitle)}</div>
-      <h1>${escapeHtml(t.title)}</h1>
-    </div>
-    <div class="meta">
-      <div><strong>${escapeHtml(t.period)}:</strong> ${escapeHtml(period)}</div>
-      <div><strong>${escapeHtml(t.project)}:</strong> ${escapeHtml(project)}</div>
-      <div><strong>${escapeHtml(t.generated)}:</strong> ${escapeHtml(formatDate(stats.generatedAt, locale))}</div>
-    </div>
-  </div>
+  const content: Content[] = [
+    {
+      columns: [
+        {
+          stack: [
+            { text: t.subtitle.toUpperCase(), style: "brand" },
+            { text: t.title, style: "title", margin: [0, 4, 0, 0] },
+          ],
+        },
+        {
+          width: "auto",
+          alignment: "right",
+          stack: [
+            { text: [{ text: `${t.period}: `, bold: true }, period], style: "meta" },
+            { text: [{ text: `${t.project}: `, bold: true }, project], style: "meta" },
+            {
+              text: [
+                { text: `${t.generated}: `, bold: true },
+                formatDate(stats.generatedAt, locale),
+              ],
+              style: "meta",
+            },
+          ],
+        },
+      ],
+      margin: [0, 0, 0, 8],
+    },
+    {
+      canvas: [
+        {
+          type: "line",
+          x1: 0,
+          y1: 0,
+          x2: 515,
+          y2: 0,
+          lineWidth: 2,
+          lineColor: "#312e81",
+        },
+      ],
+      margin: [0, 0, 0, 8],
+    },
 
-  <p class="hint">${escapeHtml(t.printHint)}</p>
+    sectionHeading(t.overview),
+    kpiGrid([
+      [t.totalTasks, String(totals.total)],
+      [t.open, String(totals.open)],
+      [t.inProgress, String(totals.inProgress)],
+      [t.closed, String(totals.closed)],
+      [t.completionRate, `${totals.completionRate}%`],
+      [t.overdue, String(totals.overdue)],
+      [t.dueThisWeek, String(totals.dueThisWeek)],
+      [t.collaborators, String(totals.activeCollaborators)],
+      [t.collabTasks, String(totals.collabTasks)],
+    ]),
 
-  <h2>${escapeHtml(t.overview)}</h2>
-  <div class="kpis">${kpiRows}</div>
+    sectionHeading(t.forecast),
+    kpiGrid(
+      [
+        [t.remaining, String(forecast.remaining)],
+        [t.velocity, velocity],
+        [t.eta, eta],
+        [t.confidence, confidenceLabel(forecast.confidence, t)],
+      ],
+      4,
+    ),
+  ];
 
-  <h2>${escapeHtml(t.forecast)}</h2>
-  <div class="forecast">
-    <div class="kpi"><div class="kpi-label">${escapeHtml(t.remaining)}</div><div class="kpi-value">${forecast.remaining}</div></div>
-    <div class="kpi"><div class="kpi-label">${escapeHtml(t.velocity)}</div><div class="kpi-value">${escapeHtml(velocity)}</div></div>
-    <div class="kpi"><div class="kpi-label">${escapeHtml(t.eta)}</div><div class="kpi-value" style="font-size:14px">${escapeHtml(eta)}</div></div>
-    <div class="kpi"><div class="kpi-label">${escapeHtml(t.confidence)}</div><div class="kpi-value" style="font-size:14px">${escapeHtml(confidenceLabel(forecast.confidence, t))}</div></div>
-  </div>
-
-  ${
-    teamWorkload.length > 0
-      ? `<h2>${escapeHtml(t.teamWorkload)}</h2>
-  <table>
-    <thead><tr><th>${escapeHtml(t.member)}</th><th class="num">${escapeHtml(t.done)}</th><th class="num">${escapeHtml(t.notDone)}</th><th class="num">${escapeHtml(t.progress)}</th></tr></thead>
-    <tbody>${workloadRows}</tbody>
-  </table>`
-      : ""
+  if (teamWorkload.length > 0) {
+    content.push(
+      sectionHeading(t.teamWorkload),
+      table(
+        [t.member, t.done, t.notDone, t.progress],
+        teamWorkload
+          .slice(0, 25)
+          .map((m) => [m.name, String(m.done), String(m.notDone), `${m.completionPct}%`]),
+        ["*", 50, 55, 55],
+      ),
+    );
   }
 
-  ${
-    milestones.length > 0
-      ? `<h2>${escapeHtml(t.milestones)}</h2>
-  <table>
-    <thead><tr><th>${escapeHtml(t.task)}</th><th>${escapeHtml(t.status)}</th><th>${escapeHtml(t.due)}</th></tr></thead>
-    <tbody>${milestoneRows}</tbody>
-  </table>`
-      : ""
+  if (milestones.length > 0) {
+    content.push(
+      sectionHeading(t.milestones),
+      table(
+        [t.task, t.status, t.due],
+        milestones
+          .slice(0, 20)
+          .map((m) => [m.name, m.status.label, formatDate(m.dueDate, locale)]),
+        ["*", 90, 80],
+        3,
+      ),
+    );
   }
 
-  ${
-    goals.length > 0
-      ? `<h2>${escapeHtml(t.goals)}</h2>
-  <table>
-    <thead><tr><th>${escapeHtml(t.task)}</th><th class="num">${escapeHtml(t.progress)}</th></tr></thead>
-    <tbody>${goalRows}</tbody>
-  </table>`
-      : ""
+  if (goals.length > 0) {
+    content.push(
+      sectionHeading(t.goals),
+      table(
+        [t.task, t.progress],
+        goals
+          .slice(0, 15)
+          .map((g) => [g.name, `${Math.round(g.percentComplete)}%`]),
+        ["*", 60],
+      ),
+    );
   }
 
-  ${
-    recentActivity.completed.length > 0
-      ? `<h2>${escapeHtml(t.recentCompleted)}</h2>
-  <table>
-    <thead><tr><th>${escapeHtml(t.task)}</th><th>${escapeHtml(t.list)}</th></tr></thead>
-    <tbody>${completedRows}</tbody>
-  </table>`
-      : ""
+  if (recentActivity.completed.length > 0) {
+    content.push(
+      sectionHeading(t.recentCompleted),
+      table(
+        [t.task, t.list],
+        recentActivity.completed
+          .slice(0, 15)
+          .map((task) => [task.name, task.listName ?? "—"]),
+        ["*", 120],
+        2,
+      ),
+    );
   }
 
-  <div class="footer">
-    <span>${escapeHtml(t.footer)}</span>
-    <span>${escapeHtml(period)}</span>
-  </div>
-  <script>
-    window.addEventListener("load", function () {
-      setTimeout(function () { window.focus(); window.print(); }, 250);
-    });
-  </script>
-</body>
-</html>`;
+  content.push({
+    columns: [
+      { text: t.footer, style: "footer" },
+      { text: period, style: "footer", alignment: "right" },
+    ],
+    margin: [0, 24, 0, 0],
+  });
+
+  return {
+    pageSize: "A4",
+    pageMargins: [40, 40, 40, 40],
+    defaultStyle: {
+      font: "Roboto",
+      fontSize: 10,
+      color: "#18181b",
+    },
+    styles: {
+      brand: {
+        fontSize: 9,
+        bold: true,
+        color: "#6366f1",
+        characterSpacing: 1,
+      },
+      title: {
+        fontSize: 18,
+        bold: true,
+      },
+      meta: {
+        fontSize: 9,
+        color: "#52525b",
+        lineHeight: 1.35,
+      },
+      section: {
+        fontSize: 10,
+        bold: true,
+        color: "#4338ca",
+        characterSpacing: 0.6,
+      },
+      kpiLabel: {
+        fontSize: 8,
+        color: "#71717a",
+        characterSpacing: 0.4,
+      },
+      kpiValue: {
+        fontSize: 14,
+        bold: true,
+      },
+      kpiBox: {
+        margin: [0, 0, 0, 0],
+      },
+      th: {
+        fontSize: 8,
+        bold: true,
+        color: "#71717a",
+      },
+      td: {
+        fontSize: 9,
+      },
+      footer: {
+        fontSize: 8,
+        color: "#71717a",
+      },
+    },
+    content,
+  };
 }
 
-/** Opens a print-ready report window so the user can Save as PDF (Unicode-safe for MN). */
-export function exportDashboardPdf(
+function fileName(stats: DashboardStats, locale: ExportLocale): string {
+  const stamp =
+    stats.from && stats.to
+      ? `${stats.from}_${stats.to}`
+      : formatDate(stats.generatedAt, "en").replace(/[^a-zA-Z0-9]+/g, "-");
+  return `odin-dashboard-${locale}-${stamp}.pdf`;
+}
+
+type PdfMakeApi = typeof import("pdfmake");
+
+let pdfMakeReady: Promise<PdfMakeApi> | null = null;
+
+async function getPdfMake(): Promise<PdfMakeApi> {
+  if (!pdfMakeReady) {
+    pdfMakeReady = (async () => {
+      const pdfMakeMod = await import("pdfmake/build/pdfmake");
+      const pdfFontsMod = await import("pdfmake/build/vfs_fonts");
+      const pdfMake = (pdfMakeMod.default ?? pdfMakeMod) as PdfMakeApi;
+      const vfs =
+        ("default" in pdfFontsMod ? pdfFontsMod.default : pdfFontsMod) as
+          import("pdfmake/interfaces").TVirtualFileSystem;
+      pdfMake.addVirtualFileSystem(vfs);
+      return pdfMake;
+    })();
+  }
+  return pdfMakeReady;
+}
+
+/** Generates a PDF and triggers a direct file download (no popup / print dialog). */
+export async function exportDashboardPdf(
   stats: DashboardStats,
   locale: ExportLocale,
   options?: { projectName?: string | null },
-): void {
-  const html = buildReportHtml(stats, locale, options);
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
-  if (!popup) {
-    throw new Error(
-      locale === "mn"
-        ? "Попап хаагдсан байна. PDF экспортлохын тулд попапыг зөвшөөрнө үү."
-        : "Popup blocked. Allow popups to export the PDF.",
-    );
-  }
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
+): Promise<void> {
+  const pdfMake = await getPdfMake();
+  const doc = buildDocDefinition(stats, locale, options);
+  const pdf = pdfMake.createPdf(doc);
+  await pdf.download(fileName(stats, locale));
 }

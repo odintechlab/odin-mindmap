@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  countTaskBuckets,
+  isFinishedStatus,
   parseAbsoluteDateRange,
   taskInAbsoluteRange,
 } from "./taskMetrics";
@@ -76,5 +78,46 @@ describe("taskInAbsoluteRange", () => {
       date_updated: String(new Date(2026, 2, 1).getTime()),
     });
     expect(taskInAbsoluteRange(t, fromMs, toMs)).toBe(false);
+  });
+});
+
+describe("isFinishedStatus", () => {
+  it("treats closed and done as finished", () => {
+    expect(isFinishedStatus("closed")).toBe(true);
+    expect(isFinishedStatus("done")).toBe(true);
+    expect(isFinishedStatus("open")).toBe(false);
+    expect(isFinishedStatus("custom")).toBe(false);
+  });
+});
+
+describe("countTaskBuckets", () => {
+  const pastDue = String(Date.now() - 86_400_000);
+  const futureDue = String(Date.now() + 86_400_000);
+
+  it("does not count done or closed tasks as overdue", () => {
+    const tasks = [
+      task({
+        id: "open-overdue",
+        status: { id: "1", status: "open", color: "#000", orderindex: 0, type: "open" },
+        due_date: pastDue,
+      }),
+      task({
+        id: "done-past-due",
+        status: { id: "2", status: "complete", color: "#0f0", orderindex: 0, type: "done" },
+        due_date: pastDue,
+      }),
+      task({
+        id: "closed-past-due",
+        status: { id: "3", status: "complete", color: "#0f0", orderindex: 0, type: "closed" },
+        due_date: pastDue,
+      }),
+      task({
+        id: "open-future",
+        status: { id: "4", status: "open", color: "#000", orderindex: 0, type: "open" },
+        due_date: futureDue,
+      }),
+    ];
+    const counts = countTaskBuckets(tasks);
+    expect(counts.overdue).toBe(1);
   });
 });

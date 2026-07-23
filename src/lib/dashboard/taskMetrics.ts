@@ -103,6 +103,11 @@ export function getClosedAt(task: ClickUpTask): number {
   );
 }
 
+/** ClickUp Done + Closed — finished work is not overdue. */
+export function isFinishedStatus(type: string): boolean {
+  return type === "closed" || type === "done";
+}
+
 export function toAssignee(user: ClickUpUser): DashboardAssignee {
   return {
     id: user.id,
@@ -174,7 +179,7 @@ export function countTaskBuckets(
     }
 
     const due = parseTimestamp(task.due_date);
-    if (due && type !== "closed" && due < now) {
+    if (due && !isFinishedStatus(type) && due < now) {
       overdue++;
     }
   }
