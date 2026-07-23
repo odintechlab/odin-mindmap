@@ -1,6 +1,6 @@
 import type { ClickUpMember, ClickUpTask } from "@/types/clickup";
 import type { DashboardMemberWorkload } from "@/types/dashboard";
-import { toTaskSummary } from "./taskMetrics";
+import { isFinishedStatus, toTaskSummary } from "./taskMetrics";
 
 export function buildTeamWorkload(
   members: ClickUpMember[],
@@ -22,7 +22,7 @@ export function buildTeamWorkload(
       >();
 
       for (const task of tasks) {
-        if (task.status.type === "closed") {
+        if (isFinishedStatus(task.status.type)) {
           done++;
         } else {
           notDone++;
