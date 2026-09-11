@@ -167,6 +167,7 @@ export function taskToNode(
             color: task.priority.color,
           }
         : undefined,
+      startDate: task.start_date ?? null,
       dueDate: task.due_date ?? null,
       assignees: task.assignees?.map((a) => ({
         id: a.id,

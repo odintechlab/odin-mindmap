@@ -154,6 +154,10 @@ export interface TaskUpdatePayload {
   status?: string;
   priority?: number | null;
   assignees?: { add?: number[]; rem?: number[] };
+  /** Unix ms as string, or null to clear. */
+  start_date?: string | null;
+  /** Unix ms as string, or null to clear. */
+  due_date?: string | null;
 }
 
 export interface TaskCreatePayload {

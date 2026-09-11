@@ -1,4 +1,5 @@
 import type { TaskCreatePayload, TaskUpdatePayload } from "@/types/clickup";
+import { isValidIsoDate, startOfIsoDate } from "@/lib/datetime";
 import { clickupPathId } from "./ids";
 
 const MAX_NAME = 1000;
@@ -10,6 +11,30 @@ function positiveIntIds(value: unknown): number[] {
   return value
     .filter((n): n is number => Number.isInteger(n) && n > 0)
     .slice(0, MAX_ASSIGNEE_BATCH);
+}
+
+/** Accept null (clear), YYYY-MM-DD, or a positive unix-ms number/string. */
+function optionalClickUpDate(
+  value: unknown,
+  field: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (value === null) return { ok: true, value: null };
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (isValidIsoDate(trimmed)) {
+      const ms = startOfIsoDate(trimmed);
+      if (ms == null) return { ok: false, error: `${field} is invalid` };
+      return { ok: true, value: String(ms) };
+    }
+    if (/^\d{10,16}$/.test(trimmed)) {
+      return { ok: true, value: trimmed };
+    }
+    return { ok: false, error: `${field} is invalid` };
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return { ok: true, value: String(Math.trunc(value)) };
+  }
+  return { ok: false, error: `${field} is invalid` };
 }
 
 export function sanitizeTaskUpdate(
@@ -55,6 +80,26 @@ export function sanitizeTaskUpdate(
       add: positiveIntIds(raw.add),
       rem: positiveIntIds(raw.rem),
     };
+  }
+
+  if (b.start_date !== undefined) {
+    const start = optionalClickUpDate(b.start_date, "Start date");
+    if (!start.ok) return start;
+    payload.start_date = start.value;
+  }
+
+  if (b.due_date !== undefined) {
+    const due = optionalClickUpDate(b.due_date, "Due date");
+    if (!due.ok) return due;
+    payload.due_date = due.value;
+  }
+
+  if (
+    payload.start_date &&
+    payload.due_date &&
+    Number(payload.start_date) > Number(payload.due_date)
+  ) {
+    return { ok: false, error: "Start date must be on or before due date" };
   }
 
   if (Object.keys(payload).length === 0) {

@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { PRIORITY_OPTIONS } from "@/lib/mindmap/constants";
 import { updateTask } from "@/lib/mindmap/api";
+import { calendarDayKey } from "@/lib/datetime";
 import {
   priorityMessageKey,
   useI18n,
@@ -22,6 +23,13 @@ import type { MessageKey } from "@/lib/i18n/messages";
 import { isTaskType, type MindMapNodeData, type NodeRecord, type NodeType } from "@/types/mindmap";
 import type { MemberOption } from "./MindMapToolbar";
 import type { ClickUpUser } from "@/types/clickup";
+
+function msToDateInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const ms = Number(value);
+  if (!Number.isFinite(ms)) return "";
+  return calendarDayKey(ms);
+}
 
 interface NodeDetailPanelProps {
   node: NodeRecord | null;
@@ -58,6 +66,8 @@ export function NodeDetailPanel({
   const [name, setName] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState<string>("");
+  const [startDate, setStartDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [subtaskName, setSubtaskName] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
@@ -73,6 +83,8 @@ export function NodeDetailPanel({
     setName(data.label);
     setStatus(data.status?.name ?? "");
     setPriority(data.priority?.id ?? "");
+    setStartDate(msToDateInput(data.startDate));
+    setDueDate(msToDateInput(data.dueDate));
     setSubtaskName("");
     setAssigneeIds(
       (data.assignees ?? [])
@@ -94,6 +106,8 @@ export function NodeDetailPanel({
         status?: string;
         priority?: number | null;
         assignees?: { add?: number[]; rem?: number[] };
+        start_date?: string | null;
+        due_date?: string | null;
       } = {};
 
       if (name !== data.label) payload.name = name;
@@ -109,6 +123,20 @@ export function NodeDetailPanel({
       for (const id of nextAssignees) if (!existingAssignees.has(id)) add.push(id);
       for (const id of existingAssignees) if (!nextAssignees.has(id)) rem.push(id);
       if (add.length > 0 || rem.length > 0) payload.assignees = { add, rem };
+
+      const existingStart = msToDateInput(data.startDate);
+      const existingDue = msToDateInput(data.dueDate);
+      if (startDate !== existingStart) {
+        payload.start_date = startDate || null;
+      }
+      if (dueDate !== existingDue) {
+        payload.due_date = dueDate || null;
+      }
+
+      if (startDate && dueDate && startDate > dueDate) {
+        setError(t("error.startAfterDue"));
+        return;
+      }
 
       if (Object.keys(payload).length === 0) return;
 
@@ -131,6 +159,8 @@ export function NodeDetailPanel({
               color: task.priority.color,
             }
           : undefined,
+        startDate: task.start_date ?? null,
+        dueDate: task.due_date ?? null,
         assignees: task.assignees?.map((a: ClickUpUser) => ({
           id: a.id,
           username: a.username,
@@ -304,6 +334,54 @@ export function NodeDetailPanel({
               </div>
             )}
 
+            <div>
+              <FieldLabel>{t("common.startDate")}</FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={saving}
+                  aria-label={t("common.startDate")}
+                />
+                {startDate ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setStartDate("")}
+                    disabled={saving}
+                    className="shrink-0"
+                  >
+                    {t("common.clearDate")}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>{t("common.dueDate")}</FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  disabled={saving}
+                  aria-label={t("common.dueDate")}
+                />
+                {dueDate ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDueDate("")}
+                    disabled={saving}
+                    className="shrink-0"
+                  >
+                    {t("common.clearDate")}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
             <Button onClick={handleSave} disabled={saving} className="w-full">
               {saving ? t("common.saving") : t("common.save")}
             </Button>
@@ -335,7 +413,16 @@ export function NodeDetailPanel({
           </>
         )}
 
-        {data.dueDate && (
+        {!editable && data.startDate && (
+          <div>
+            <FieldLabel>{t("common.startDate")}</FieldLabel>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              {formatDate(Number(data.startDate))}
+            </p>
+          </div>
+        )}
+
+        {!editable && data.dueDate && (
           <div>
             <FieldLabel>{t("common.dueDate")}</FieldLabel>
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">

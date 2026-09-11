@@ -22,6 +22,7 @@ export interface MindMapNodeData {
   label: string;
   status?: { name: string; color: string; type?: string };
   priority?: { id: string; label: string; color: string };
+  startDate?: string | null;
   dueDate?: string | null;
   assignees?: MindMapAssignee[];
   url?: string;
@@ -63,6 +64,8 @@ export interface TaskUpdateRequest {
   name?: string;
   status?: string;
   priority?: number | null;
+  start_date?: string | null;
+  due_date?: string | null;
 }
 
 export function makeNodeId(type: NodeType, clickupId: string): string {

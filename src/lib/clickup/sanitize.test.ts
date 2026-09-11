@@ -15,6 +15,28 @@ describe("sanitizeTaskUpdate", () => {
     });
   });
 
+  it("accepts ISO start/due dates and null clears", () => {
+    const result = sanitizeTaskUpdate({
+      start_date: "2026-09-03",
+      due_date: null,
+    });
+    expect(result).toEqual({
+      ok: true,
+      payload: {
+        start_date: String(Date.parse("2026-09-02T16:00:00.000Z")),
+        due_date: null,
+      },
+    });
+  });
+
+  it("rejects start after due", () => {
+    const result = sanitizeTaskUpdate({
+      start_date: "2026-09-10",
+      due_date: "2026-09-03",
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects path-like junk in parent on create", () => {
     const result = sanitizeTaskCreate({
       name: "Task",

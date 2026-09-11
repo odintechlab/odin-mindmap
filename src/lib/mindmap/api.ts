@@ -60,6 +60,8 @@ export async function updateTask(
     status?: string;
     priority?: number | null;
     assignees?: { add?: number[]; rem?: number[] };
+    start_date?: string | null;
+    due_date?: string | null;
   },
 ) {
   const res = await fetch(`/api/clickup/tasks/${taskId}`, {
