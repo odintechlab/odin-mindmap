@@ -1,6 +1,7 @@
 "use client";
 
 import { CollapsibleTaskGroups } from "@/components/tasks/CollapsibleTaskGroups";
+import { HourlyActivityChart } from "@/components/people/charts/HourlyActivityChart";
 import { useI18n } from "@/components/i18n/LocaleProvider";
 import type { DashboardStats } from "@/types/dashboard";
 
@@ -46,6 +47,8 @@ function WeeklySparkline({
 interface ActivitySectionProps {
   recentActivity: DashboardStats["recentActivity"];
   weeklyCompleted: DashboardStats["weeklyCompleted"];
+  hourlyActivity: DashboardStats["hourlyActivity"];
+  peakActiveHour: DashboardStats["peakActiveHour"];
   range: DashboardStats["range"];
   from?: string | null;
   to?: string | null;
@@ -62,6 +65,8 @@ function statusColor(
 export function ActivitySection({
   recentActivity,
   weeklyCompleted,
+  hourlyActivity,
+  peakActiveHour,
   range,
   from,
   to,
@@ -104,6 +109,14 @@ export function ActivitySection({
       <p className="mt-0.5 text-xs text-[var(--muted)]">{periodLabel}</p>
 
       <WeeklySparkline data={weeklyCompleted} />
+
+      <HourlyActivityChart
+        data={hourlyActivity}
+        variant="inset"
+        titleKey="charts.teamHourlyActivity"
+        sublabelKey="charts.teamHourlyActivitySub"
+        peakHour={peakActiveHour}
+      />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="space-y-2">

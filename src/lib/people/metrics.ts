@@ -10,6 +10,8 @@ import {
 import {
   calendarDayKey,
   formatWeekLabel,
+  hourInAppTz,
+  isCoreWorkHour,
   startOfDay,
   startOfWeek,
 } from "@/lib/datetime";
@@ -17,6 +19,7 @@ import type {
   GradeImprovement,
   GradeImprovementId,
   InsightId,
+  PeopleHourlyPoint,
   PeoplePriorityMix,
   PeopleProjectMix,
   PeopleRosterMember,
@@ -46,7 +49,10 @@ const PROJECT_MIX_LIMIT = 8;
 export {
   APP_TIMEZONE,
   calendarDayKey,
+  formatHourRange,
   formatWeekLabel,
+  hourInAppTz,
+  isCoreWorkHour,
   startOfDay,
   startOfWeek,
 } from "@/lib/datetime";
@@ -163,6 +169,64 @@ export function buildWeeklyActivitySeries(
     weekLabel: formatWeekLabel(w),
     count: daysByWeek.get(w)?.size ?? 0,
   }));
+}
+
+export function buildHourlyActivitySeries(
+  tasks: ClickUpTask[],
+  range: { fromMs: number; toMs: number } | null,
+): PeopleHourlyPoint[] {
+  const counts = Array.from({ length: 24 }, () => 0);
+  const seen = new Set<string>();
+
+  const add = (taskId: string, ts: number | null) => {
+    if (ts === null || ts <= 0) return;
+    if (!inRange(ts, range)) return;
+    const hour = hourInAppTz(ts);
+    const key = `${taskId}:${hour}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    counts[hour] += 1;
+  };
+
+  for (const task of tasks) {
+    add(task.id, parseTimestamp(task.date_updated));
+    if (isFinishedStatus(task.status.type)) {
+      add(task.id, getClosedAt(task) || null);
+    }
+  }
+
+  return counts.map((count, hour) => ({
+    hour,
+    count,
+    core: isCoreWorkHour(hour),
+  }));
+}
+
+/** Highest-count hour; ties prefer core hours, then earlier hour. */
+export function computePeakActiveHour(
+  series: PeopleHourlyPoint[],
+): number | null {
+  let peak: number | null = null;
+  let peakCount = 0;
+
+  for (const point of series) {
+    if (point.count <= 0) continue;
+    if (
+      peak === null ||
+      point.count > peakCount ||
+      (point.count === peakCount &&
+        isCoreWorkHour(point.hour) &&
+        !isCoreWorkHour(peak)) ||
+      (point.count === peakCount &&
+        isCoreWorkHour(point.hour) === isCoreWorkHour(peak) &&
+        point.hour < peak)
+    ) {
+      peak = point.hour;
+      peakCount = point.count;
+    }
+  }
+
+  return peak;
 }
 
 export function countDelivery(tasks: ClickUpTask[]): {
@@ -779,7 +843,9 @@ export const INSIGHT_MESSAGE_KEYS: Record<InsightId, `insight.${InsightId}`> = {
   noAssignedTasks: "insight.noAssignedTasks",
 };
 
-export function seriesHasChartData(series: PeopleWeeklyPoint[]): boolean {
+export function seriesHasChartData(
+  series: { count: number }[],
+): boolean {
   if (series.length < 2) return false;
   return series.some((p) => p.count > 0);
 }

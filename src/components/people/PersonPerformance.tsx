@@ -8,6 +8,7 @@ import { personHref, rosterHref } from "@/lib/people/api";
 import { INSIGHT_MESSAGE_KEYS } from "@/lib/people/metrics";
 import type { MemberPerformance, PeopleStatusGroup } from "@/types/people";
 import { ActivitySignalChart } from "./charts/ActivitySignalChart";
+import { HourlyActivityChart } from "./charts/HourlyActivityChart";
 import { PriorityMixChart } from "./charts/PriorityMixChart";
 import { ProjectMixChart } from "./charts/ProjectMixChart";
 import { StatusMixChart } from "./charts/StatusMixChart";
@@ -132,6 +133,11 @@ export function PersonPerformance({
             <WeeklyCompletionsChart data={stats.weeklyCompleted} />
             <ActivitySignalChart data={stats.weeklyActivity} />
           </div>
+
+          <HourlyActivityChart
+            data={stats.hourlyActivity}
+            peakHour={stats.kpis.peakActiveHour}
+          />
 
           <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
             <StatusMixChart data={stats.byStatus} />

@@ -73,6 +73,8 @@ export function DashboardGrid({ stats }: DashboardGridProps) {
       <ActivitySection
         recentActivity={stats.recentActivity}
         weeklyCompleted={stats.weeklyCompleted}
+        hourlyActivity={stats.hourlyActivity}
+        peakActiveHour={stats.peakActiveHour}
         range={stats.range}
         from={stats.from}
         to={stats.to}

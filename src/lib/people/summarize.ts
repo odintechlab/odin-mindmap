@@ -5,6 +5,7 @@ import {
   buildPriorityMix,
   buildProjectMix,
   buildStatusCounts,
+  buildHourlyActivitySeries,
   buildWeeklyActivitySeries,
   buildWeeklyCompletedSeries,
   computeCollaboration,
@@ -12,6 +13,7 @@ import {
   computeLastActiveAt,
   computeOnTime,
   computeOverdueTasks,
+  computePeakActiveHour,
   computePerformanceGrade,
   computeStaleTasks,
   computeTouchDays,
@@ -83,6 +85,8 @@ export function buildDetailPayload(
   const onTime = computeOnTime(tasks);
   const weeklyCompleted = buildWeeklyCompletedSeries(tasks, weekStarts, range);
   const weeklyActivity = buildWeeklyActivitySeries(tasks, weekStarts, range);
+  const hourlyActivity = buildHourlyActivitySeries(tasks, range);
+  const peakActiveHour = computePeakActiveHour(hourlyActivity);
   const collab = computeCollaboration(tasks, member.user.id);
   const openTotal = delivery.open + delivery.inProgress;
   const index = roster.findIndex((m) => m.id === member.user.id);
@@ -139,6 +143,7 @@ export function buildDetailPayload(
       cycleTimeMedianDays: computeCycleTimeMedianDays(tasks),
       lastActiveAt,
       touchDays: computeTouchDays(tasks, range, weekStarts),
+      peakActiveHour,
       collabTasks: collab.collabTasks,
       uniqueCollaborators: collab.uniqueCollaborators,
     },
@@ -183,6 +188,7 @@ export function buildDetailPayload(
     }),
     weeklyCompleted,
     weeklyActivity,
+    hourlyActivity,
     byStatus: buildStatusCounts(tasks),
     byProject: buildProjectMix(tasks),
     byPriority: buildPriorityMix(tasks),

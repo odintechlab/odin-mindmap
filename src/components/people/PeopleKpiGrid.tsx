@@ -20,6 +20,7 @@ import {
   type PeopleKpiAccent,
   type PeopleKpiTone,
 } from "./PeopleKpiCard";
+import { formatHourRange, isCoreWorkHour } from "@/lib/people/metrics";
 
 type Panel = "completed" | "open" | "overdue" | "stale";
 
@@ -128,7 +129,7 @@ export function PeopleKpiGrid({ stats }: { stats: MemberPerformance }) {
       </div>
 
       {showMore ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6">
           <PeopleKpiCard
             label={t("kpi.throughput")}
             value={kpis.throughputPerWeek ?? t("common.emDash")}
@@ -166,6 +167,23 @@ export function PeopleKpiGrid({ stats }: { stats: MemberPerformance }) {
             sublabel={t("kpi.touchDaysSub")}
             tone="blue"
             icon={<IconCalendar />}
+          />
+          <PeopleKpiCard
+            label={t("kpi.mostActive")}
+            value={
+              kpis.peakActiveHour !== null
+                ? formatHourRange(kpis.peakActiveHour)
+                : t("common.emDash")
+            }
+            sublabel={
+              kpis.peakActiveHour === null
+                ? t("kpi.mostActiveSub")
+                : isCoreWorkHour(kpis.peakActiveHour)
+                  ? t("kpi.mostActiveSub")
+                  : t("kpi.mostActiveOvertime")
+            }
+            tone="violet"
+            icon={<IconPulse />}
           />
           <PeopleKpiCard
             label={t("kpi.collaboration")}

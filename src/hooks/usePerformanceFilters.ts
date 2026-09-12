@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ALL_TIME_RANGE,
+  selectionForPreset,
   thisMonthRange,
   type DateRangePreset,
   type DateRangeSelection,
@@ -19,11 +20,79 @@ const PRESETS: DateRangePreset[] = [
   "custom",
 ];
 
+/** Remember performance period across visits for a week. */
+export const PERFORMANCE_RANGE_STORAGE_KEY = "odin_performance_date_range";
+const PERFORMANCE_RANGE_TTL_MS = 7 * 86_400_000;
+
+type StoredPerformanceRange = {
+  preset: DateRangePreset;
+  from: string;
+  to: string;
+  savedAt: number;
+};
+
 function parsePreset(raw: string | null): DateRangePreset {
   if (raw && PRESETS.includes(raw as DateRangePreset)) {
     return raw as DateRangePreset;
   }
   return "custom";
+}
+
+function readStoredRange(): StoredPerformanceRange | null {
+  try {
+    const raw = window.localStorage.getItem(PERFORMANCE_RANGE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredPerformanceRange;
+    if (
+      !parsed ||
+      typeof parsed.savedAt !== "number" ||
+      !PRESETS.includes(parsed.preset)
+    ) {
+      return null;
+    }
+    if (Date.now() - parsed.savedAt > PERFORMANCE_RANGE_TTL_MS) {
+      window.localStorage.removeItem(PERFORMANCE_RANGE_STORAGE_KEY);
+      return null;
+    }
+    return {
+      preset: parsed.preset,
+      from: typeof parsed.from === "string" ? parsed.from : "",
+      to: typeof parsed.to === "string" ? parsed.to : "",
+      savedAt: parsed.savedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredRange(sel: DateRangeSelection): void {
+  try {
+    const payload: StoredPerformanceRange = {
+      preset: sel.preset,
+      from: sel.from,
+      to: sel.to,
+      savedAt: Date.now(),
+    };
+    window.localStorage.setItem(
+      PERFORMANCE_RANGE_STORAGE_KEY,
+      JSON.stringify(payload),
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function resolveStoredSelection(
+  stored: StoredPerformanceRange,
+): DateRangeSelection {
+  if (stored.preset === "all") return ALL_TIME_RANGE;
+  if (stored.preset === "custom") {
+    if (stored.from && stored.to) {
+      return { preset: "custom", from: stored.from, to: stored.to };
+    }
+    return thisMonthRange();
+  }
+  return selectionForPreset(stored.preset);
 }
 
 export function usePerformanceFilters() {
@@ -51,23 +120,36 @@ export function usePerformanceFilters() {
     [pathname, router],
   );
 
-  // Default to this month when the URL has no period yet.
+  // Default / restore period when the URL has none yet.
   // Explicit "all" is preserved via range=all.
   useEffect(() => {
     if (didDefaultRef.current) return;
     const hasDates = Boolean(fromParam && toParam);
     const isExplicitAll = rangeParam === "all";
+
     if (hasDates || isExplicitAll) {
       didDefaultRef.current = true;
+      writeStoredRange({
+        preset: isExplicitAll
+          ? "all"
+          : rangeParam
+            ? parsePreset(rangeParam)
+            : "custom",
+        from: fromParam,
+        to: toParam,
+      });
       return;
     }
+
     didDefaultRef.current = true;
-    const month = thisMonthRange();
+    const stored = readStoredRange();
+    const restored = stored ? resolveStoredSelection(stored) : thisMonthRange();
+    writeStoredRange(restored);
     replace({
       listId,
-      from: month.from,
-      to: month.to,
-      range: "month",
+      from: restored.from,
+      to: restored.to,
+      range: restored.preset === "custom" ? null : restored.preset,
     });
   }, [fromParam, toParam, rangeParam, listId, replace]);
 
@@ -111,13 +193,15 @@ export function usePerformanceFilters() {
   );
 
   const setDateRange = useCallback(
-    (sel: DateRangeSelection) =>
+    (sel: DateRangeSelection) => {
+      writeStoredRange(sel);
       replace({
         listId,
         from: sel.from,
         to: sel.to,
         range: sel.preset === "custom" ? null : sel.preset,
-      }),
+      });
+    },
     [replace, listId],
   );
 

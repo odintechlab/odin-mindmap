@@ -86,6 +86,17 @@ const PRESETS: {
   { id: "all", compute: () => ({ from: "", to: "" }) },
 ];
 
+/** Resolve a named preset to concrete dates (recomputed for “today”). */
+export function selectionForPreset(
+  preset: Exclude<DateRangePreset, "custom">,
+  today: Date = new Date(),
+): DateRangeSelection {
+  const entry = PRESETS.find((p) => p.id === preset);
+  if (!entry) return thisMonthRange(today);
+  const { from, to } = entry.compute(today);
+  return { preset, from, to };
+}
+
 export function selectionLabel(
   value: DateRangeSelection,
   t: TranslateFn,

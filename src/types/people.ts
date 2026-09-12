@@ -9,6 +9,13 @@ export interface PeopleWeeklyPoint {
   count: number;
 }
 
+export interface PeopleHourlyPoint {
+  hour: number;
+  count: number;
+  /** True for core work window 08:00–18:00 (hours 8–17). */
+  core: boolean;
+}
+
 export type InsightId =
   | "overdueOfOpen"
   | "lastUpdateDaysAgo"
@@ -127,6 +134,8 @@ export interface PeopleMemberKpis {
   cycleTimeMedianDays: number | null;
   lastActiveAt: string | null;
   touchDays: number;
+  /** Peak hour 0–23 in APP_TIMEZONE, or null when no activity signals. */
+  peakActiveHour: number | null;
   collabTasks: number;
   uniqueCollaborators: number;
 }
@@ -163,6 +172,7 @@ export interface MemberPerformance {
   improvements: GradeImprovement[];
   weeklyCompleted: PeopleWeeklyPoint[];
   weeklyActivity: PeopleWeeklyPoint[];
+  hourlyActivity: PeopleHourlyPoint[];
   byStatus: PeopleStatusCount[];
   byProject: PeopleProjectMix[];
   byPriority: PeoplePriorityMix[];

@@ -117,6 +117,10 @@ export interface DashboardStats {
   };
   teamWorkload: DashboardMemberWorkload[];
   weeklyCompleted: { weekStartMs: number; weekLabel: string; count: number }[];
+  /** Combined hour-of-day activity across the team (updates + completions). */
+  hourlyActivity: { hour: number; count: number; core: boolean }[];
+  /** Peak hour 0–23 for the team series, or null when empty. */
+  peakActiveHour: number | null;
   forecast: DashboardForecast;
   nextMilestoneForecast: DashboardMilestoneForecast | null;
 }

@@ -1,5 +1,5 @@
 import type { Content, TDocumentDefinitions, TableCell } from "pdfmake/interfaces";
-import { APP_TIMEZONE } from "@/lib/datetime";
+import { APP_TIMEZONE, formatHourRange } from "@/lib/datetime";
 import { INSIGHT_MESSAGE_KEYS } from "@/lib/people/metrics";
 import { translate } from "@/lib/i18n/format";
 import type { Locale } from "@/lib/i18n/locale";
@@ -31,6 +31,7 @@ type Copy = {
   onTime: string;
   throughput: string;
   touchDays: string;
+  mostActive: string;
   collaboration: string;
   insights: string;
   recentCompleted: string;
@@ -108,6 +109,7 @@ const COPY: Record<ExportLocale, Copy> = {
     onTime: "On time",
     throughput: "Throughput / week",
     touchDays: "Touch days",
+    mostActive: "Most active hour",
     collaboration: "Collaboration",
     insights: "What to look at",
     recentCompleted: "Recently completed",
@@ -138,6 +140,7 @@ const COPY: Record<ExportLocale, Copy> = {
     onTime: "Хугацаандаа",
     throughput: "7 хоногийн гүйцэтгэл",
     touchDays: "Хөндсөн өдөр",
+    mostActive: "Хамгийн идэвхтэй цаг",
     collaboration: "Хамтын ажиллагаа",
     insights: "Анхаарах зүйлс",
     recentCompleted: "Саяхан дууссан",
@@ -351,6 +354,12 @@ function buildDocDefinition(
         kpis.throughputPerWeek !== null ? String(kpis.throughputPerWeek) : "-",
       ],
       [t.touchDays, String(kpis.touchDays)],
+      [
+        t.mostActive,
+        kpis.peakActiveHour !== null
+          ? formatHourRange(kpis.peakActiveHour)
+          : "-",
+      ],
       [t.collaboration, String(kpis.collabTasks)],
     ]),
   ];

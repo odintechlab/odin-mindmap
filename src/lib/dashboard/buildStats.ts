@@ -13,6 +13,10 @@ import {
   toAssignee,
   toTaskSummary,
 } from "@/lib/dashboard/taskMetrics";
+import {
+  buildHourlyActivitySeries,
+  computePeakActiveHour,
+} from "@/lib/people/metrics";
 import type {
   DashboardDateRange,
   DashboardForecast,
@@ -143,6 +147,13 @@ export async function buildDashboardStats(
 
   const weeklyCompleted = buildWeeklyCompleted(listTasks, now);
 
+  const hourlyRange = {
+    fromMs: activityStart,
+    toMs: activityEnd === Number.POSITIVE_INFINITY ? now : activityEnd,
+  };
+  const hourlyActivity = buildHourlyActivitySeries(listTasks, hourlyRange);
+  const peakActiveHour = computePeakActiveHour(hourlyActivity);
+
   const overdueTasks = kpiTasks
     .filter((t) => {
       const due = parseTimestamp(t.due_date);
@@ -216,6 +227,8 @@ export async function buildDashboardStats(
     },
     teamWorkload,
     weeklyCompleted,
+    hourlyActivity,
+    peakActiveHour,
     forecast,
     nextMilestoneForecast,
   };

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ClickUpTask } from "@/types/clickup";
 import {
+  buildHourlyActivitySeries,
   buildWeeklyCompletedSeries,
   compareNeedsAttention,
   computeCycleTimeMedianDays,
   computeLastActiveAt,
   computeOnTime,
   computeOverdueTasks,
+  computePeakActiveHour,
   computeStaleTasks,
   countDelivery,
   filterMemberTasks,
@@ -599,5 +601,108 @@ describe("computePerformanceGrade", () => {
     expect(detailGrade).toEqual(rosterGrade);
     expect(rosterGrade.level).toBe("bad");
     expect(rosterGrade.score).toBeLessThan(40);
+  });
+});
+
+describe("buildHourlyActivitySeries / computePeakActiveHour", () => {
+  it("returns empty peak when there are no signals", () => {
+    const series = buildHourlyActivitySeries(
+      [task({ id: "open-only", status: open })],
+      null,
+    );
+    expect(series).toHaveLength(24);
+    expect(series.every((p) => p.count === 0)).toBe(true);
+    expect(computePeakActiveHour(series)).toBeNull();
+  });
+
+  it("buckets updates in Asia/Ulaanbaatar and prefers core on ties", () => {
+    // 14:15 UB
+    const afternoon = Date.parse("2026-09-03T06:15:00.000Z");
+    // 07:30 UB (outside core)
+    const early = Date.parse("2026-09-02T23:30:00.000Z");
+    // 20:00 UB (overtime)
+    const evening = Date.parse("2026-09-03T12:00:00.000Z");
+
+    const series = buildHourlyActivitySeries(
+      [
+        task({
+          id: "a",
+          status: closed,
+          date_updated: String(afternoon),
+          date_closed: String(afternoon),
+        }),
+        task({
+          id: "b",
+          status: closed,
+          date_updated: String(early),
+          date_closed: String(early),
+        }),
+        task({
+          id: "c",
+          status: done,
+          date_updated: String(evening),
+          date_done: String(evening),
+        }),
+        task({
+          id: "d",
+          status: closed,
+          date_updated: String(afternoon),
+          date_closed: String(afternoon),
+        }),
+      ],
+      null,
+    );
+
+    expect(series[14]?.count).toBe(2);
+    expect(series[7]?.count).toBe(1);
+    expect(series[20]?.count).toBe(1);
+    expect(series[14]?.core).toBe(true);
+    expect(series[7]?.core).toBe(false);
+    expect(series[20]?.core).toBe(false);
+    expect(computePeakActiveHour(series)).toBe(14);
+  });
+
+  it("allows overtime peaks outside 08:00–18:00", () => {
+    const evening = Date.parse("2026-09-03T12:00:00.000Z"); // 20:00 UB
+    const series = buildHourlyActivitySeries(
+      [
+        task({
+          id: "e1",
+          status: closed,
+          date_updated: String(evening),
+          date_closed: String(evening),
+        }),
+        task({
+          id: "e2",
+          status: closed,
+          date_updated: String(evening),
+          date_closed: String(evening),
+        }),
+        task({
+          id: "day",
+          status: closed,
+          date_updated: String(Date.parse("2026-09-03T02:00:00.000Z")), // 10:00 UB
+          date_closed: String(Date.parse("2026-09-03T02:00:00.000Z")),
+        }),
+      ],
+      null,
+    );
+    expect(computePeakActiveHour(series)).toBe(20);
+  });
+
+  it("dedupes update + close in the same hour for one task", () => {
+    const ts = Date.parse("2026-09-03T06:15:00.000Z");
+    const series = buildHourlyActivitySeries(
+      [
+        task({
+          id: "one",
+          status: closed,
+          date_updated: String(ts),
+          date_closed: String(ts + 60_000),
+        }),
+      ],
+      null,
+    );
+    expect(series[14]?.count).toBe(1);
   });
 });

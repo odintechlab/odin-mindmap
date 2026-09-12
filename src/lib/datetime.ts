@@ -33,12 +33,39 @@ const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
 });
 
+const hourFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: APP_TIMEZONE,
+  hourCycle: "h23",
+  hour: "2-digit",
+});
+
 function partsMap(ts: number): Record<string, string> {
   const map: Record<string, string> = {};
   for (const part of dayPartsFormatter.formatToParts(new Date(ts))) {
     if (part.type !== "literal") map[part.type] = part.value;
   }
   return map;
+}
+
+/** Hour of day 0–23 in {@link APP_TIMEZONE}. */
+export function hourInAppTz(ts: number): number {
+  const hourPart = hourFormatter
+    .formatToParts(new Date(ts))
+    .find((part) => part.type === "hour");
+  const hour = Number(hourPart?.value);
+  return Number.isFinite(hour) ? hour : 0;
+}
+
+/** Core work window: 08:00–18:00 (hours 8–17 inclusive). */
+export function isCoreWorkHour(hour: number): boolean {
+  return hour >= 8 && hour < 18;
+}
+
+/** Format an hour bucket as `14:00–15:00`. */
+export function formatHourRange(hour: number): string {
+  const start = String(((hour % 24) + 24) % 24).padStart(2, "0");
+  const end = String((((hour % 24) + 24) % 24 + 1) % 24).padStart(2, "0");
+  return `${start}:00–${end}:00`;
 }
 
 /** YYYY-MM-DD in {@link APP_TIMEZONE}. */
