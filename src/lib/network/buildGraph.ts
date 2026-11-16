@@ -43,7 +43,7 @@ export async function buildNetworkGraph(teamId: string): Promise<NetworkGraph> {
     personNodes.set(personId(userId), {
       id: personId(userId),
       type: "person",
-      label: member.user.username,
+      label: member.user.username?.trim() || `User ${member.user.id}`,
       meta: { profilePicture: member.user.profilePicture, taskCount: 0 },
     });
   }

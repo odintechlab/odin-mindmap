@@ -252,6 +252,37 @@ describe("computeOnTime", () => {
     expect(result.onTime).toBe(3);
     expect(result.rate).toBe(100);
   });
+
+  it("does not treat catch-up marks (forgot to update) as late", () => {
+    // Due Sept 3 UB; marked complete more than a week later.
+    const due = Date.parse("2026-09-02T16:00:00.000Z");
+    const markedLater = Date.parse("2026-09-20T04:00:00.000Z");
+    const tasks = [
+      task({
+        id: "catch-up",
+        status: closed,
+        due_date: String(due),
+        date_closed: String(markedLater),
+      }),
+      task({
+        id: "catch-up-done",
+        status: done,
+        due_date: String(due),
+        date_done: String(markedLater),
+      }),
+      task({
+        id: "genuinely-late",
+        status: closed,
+        due_date: String(due),
+        // Two days after due — still inside grace, counts as late.
+        date_closed: String(Date.parse("2026-09-05T10:00:00.000Z")),
+      }),
+    ];
+    const result = computeOnTime(tasks);
+    expect(result.dated).toBe(3);
+    expect(result.onTime).toBe(2);
+    expect(result.rate).toBe(67);
+  });
 });
 
 describe("computeOverdueTasks", () => {

@@ -121,15 +121,17 @@ export function memberToNode(
 ): NodeRecord {
   const user = member.user;
   const id = makeNodeId("member", String(user.id));
+  // getMembers omits nameless profiles; keep a fallback for defensive typing.
+  const username = user.username?.trim() || `User ${user.id}`;
   return {
     id,
     data: {
       type: "member",
       clickupId: String(user.id),
       parentId,
-      label: user.username?.trim() || `User ${user.id}`,
+      label: username,
       assignees: [
-        { id: user.id, username: user.username, profilePicture: user.profilePicture },
+        { id: user.id, username, profilePicture: user.profilePicture },
       ],
       workspaceId,
       hasChildren: true,
