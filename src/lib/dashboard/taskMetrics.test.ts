@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  CATCH_UP_AFTER_DUE_MS,
   countTaskBuckets,
+  getClosedAt,
+  getMetricClosedAt,
   isFinishedStatus,
   parseAbsoluteDateRange,
   taskInAbsoluteRange,
@@ -122,6 +125,49 @@ describe("isFinishedStatus", () => {
   it("re-exports shared ClickUp helper", () => {
     expect(isFinishedStatus("closed")).toBe(true);
     expect(isFinishedStatus("done")).toBe(true);
+  });
+});
+
+describe("getMetricClosedAt", () => {
+  it("uses the earlier of date_closed and date_done", () => {
+    const earlier = Date.parse("2026-03-01T00:00:00.000Z");
+    const later = Date.parse("2026-03-10T00:00:00.000Z");
+    const t = task({
+      id: "both",
+      status: { id: "1", status: "complete", color: "#0f0", orderindex: 0, type: "closed" },
+      date_closed: String(later),
+      date_done: String(earlier),
+    });
+    expect(getClosedAt(t)).toBe(earlier);
+    expect(getMetricClosedAt(t)).toBe(earlier);
+  });
+
+  it("attributes catch-up closes to the due day", () => {
+    // Due: 2026-09-03 00:00 Asia/Ulaanbaatar
+    const due = Date.parse("2026-09-02T16:00:00.000Z");
+    const dueEnd = Date.parse("2026-09-03T15:59:59.999Z");
+    const markedMuchLater = dueEnd + CATCH_UP_AFTER_DUE_MS + 86_400_000;
+    const t = task({
+      id: "catch-up",
+      status: { id: "1", status: "complete", color: "#0f0", orderindex: 0, type: "done" },
+      due_date: String(due),
+      date_done: String(markedMuchLater),
+    });
+    expect(getClosedAt(t)).toBe(markedMuchLater);
+    expect(getMetricClosedAt(t)).toBe(dueEnd);
+  });
+
+  it("keeps genuine late closes within the grace window", () => {
+    const due = Date.parse("2026-09-02T16:00:00.000Z");
+    const dueEnd = Date.parse("2026-09-03T15:59:59.999Z");
+    const closedTwoDaysLate = dueEnd + 2 * 86_400_000;
+    const t = task({
+      id: "late",
+      status: { id: "1", status: "complete", color: "#0f0", orderindex: 0, type: "closed" },
+      due_date: String(due),
+      date_closed: String(closedTwoDaysLate),
+    });
+    expect(getMetricClosedAt(t)).toBe(closedTwoDaysLate);
   });
 });
 
