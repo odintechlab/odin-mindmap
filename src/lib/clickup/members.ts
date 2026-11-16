@@ -1,5 +1,5 @@
 import { clickup, ClickUpError } from "./client";
-import { isHiddenClickUpUser } from "@/lib/people/hiddenPeople";
+import { shouldOmitClickUpMember } from "@/lib/people/hiddenPeople";
 import type { ClickUpTeamsResponse } from "@/types/clickup";
 
 /** Workspace members are included on GET /team - there is no separate /team/{id}/member list endpoint. */
@@ -9,5 +9,5 @@ export async function getMembers(teamId: string) {
   if (!team) {
     throw new ClickUpError("Workspace not found", 404);
   }
-  return (team.members ?? []).filter((m) => !isHiddenClickUpUser(m.user.id));
+  return (team.members ?? []).filter((m) => !shouldOmitClickUpMember(m.user));
 }

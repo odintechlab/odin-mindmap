@@ -135,7 +135,8 @@ export interface ClickUpListResponse {
 
 export interface ClickUpMemberUser {
   id: number;
-  username: string;
+  /** ClickUp sometimes returns null for invited / incomplete profiles. */
+  username: string | null;
   email?: string;
   color?: string;
   profilePicture?: string | null;
