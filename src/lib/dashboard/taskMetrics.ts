@@ -91,7 +91,7 @@ export function taskInAbsoluteRange(
   if (inWindow(parseTimestamp(task.due_date))) return true;
 
   if (isFinishedStatus(task.status.type)) {
-    const closedAt = getClosedAt(task);
+    const closedAt = getMetricClosedAt(task);
     return closedAt > 0 && closedAt >= fromMs && closedAt <= toMs;
   }
 
@@ -102,12 +102,40 @@ export function taskInAbsoluteRange(
 }
 
 export function getClosedAt(task: ClickUpTask): number {
-  return (
-    parseTimestamp(task.date_closed) ??
-    parseTimestamp(task.date_done) ??
-    parseTimestamp(task.date_updated) ??
-    0
-  );
+  const closed = parseTimestamp(task.date_closed);
+  const done = parseTimestamp(task.date_done);
+  // Prefer the earlier stamp when both exist (rare, but more accurate).
+  if (closed !== null && done !== null) return Math.min(closed, done);
+  return closed ?? done ?? parseTimestamp(task.date_updated) ?? 0;
+}
+
+/**
+ * Grace after the due calendar day before a late ClickUp "mark complete"
+ * is treated as catch-up (forgot to update), not real delivery timing.
+ */
+export const CATCH_UP_AFTER_DUE_MS = 7 * 86_400_000;
+
+/**
+ * Completion time for delivery metrics (on-time, weekly velocity, cycle time).
+ * Catch-up closes — marked complete long after the due day — are attributed
+ * to the due day so forgetting to update ClickUp does not look late or
+ * inflate the current week. Activity / "recent completed" still use
+ * {@link getClosedAt}.
+ */
+export function getMetricClosedAt(task: ClickUpTask): number {
+  const closedAt = getClosedAt(task);
+  if (!closedAt) return 0;
+
+  const due = parseTimestamp(task.due_date);
+  if (due === null) return closedAt;
+
+  const dueEnd = endOfIsoDate(calendarDayKey(due));
+  if (dueEnd === null) return closedAt;
+
+  if (closedAt > dueEnd + CATCH_UP_AFTER_DUE_MS) {
+    return dueEnd;
+  }
+  return closedAt;
 }
 
 /** ClickUp Done + Closed - finished work is not open/overdue. */
@@ -214,7 +242,7 @@ export function buildWeeklyCompleted(
 
   for (const task of tasks) {
     if (!isFinishedStatus(task.status.type)) continue;
-    const closedAt = getClosedAt(task);
+    const closedAt = getMetricClosedAt(task);
     if (!closedAt) continue;
 
     for (const week of weeks) {

@@ -1,6 +1,7 @@
 import type { ClickUpTask } from "@/types/clickup";
 import {
   getClosedAt,
+  getMetricClosedAt,
   isFinishedStatus,
   parseTimestamp,
   taskInAbsoluteRange,
@@ -124,7 +125,7 @@ export function buildWeeklyCompletedSeries(
 
   for (const task of tasks) {
     if (!isFinishedStatus(task.status.type)) continue;
-    const closedAt = getClosedAt(task);
+    const closedAt = getMetricClosedAt(task);
     if (!closedAt) continue;
     if (!inRange(closedAt, range)) continue;
     const week = startOfWeek(closedAt);
@@ -270,7 +271,8 @@ export function computeOnTime(tasks: ClickUpTask[]): {
     if (!isFinishedStatus(task.status.type)) continue;
     const due = parseTimestamp(task.due_date);
     if (due === null) continue;
-    const closedAt = getClosedAt(task);
+    // Catch-up marks (closed long after due) attribute to the due day.
+    const closedAt = getMetricClosedAt(task);
     if (!closedAt) continue;
     dated++;
     // ClickUp due dates are usually midnight, not a time of day.
@@ -299,7 +301,7 @@ export function computeCycleTimeMedianDays(tasks: ClickUpTask[]): number | null 
 
   for (const task of tasks) {
     if (!isFinishedStatus(task.status.type)) continue;
-    const closedAt = getClosedAt(task);
+    const closedAt = getMetricClosedAt(task);
     if (!closedAt) continue;
     const start =
       parseTimestamp(task.start_date) ?? parseTimestamp(task.date_created);
